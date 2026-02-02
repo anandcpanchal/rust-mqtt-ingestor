@@ -1,0 +1,31 @@
+[package]
+name = "poc-mqtt-backend"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+tokio = { version = "1.36", features = ["full"] }
+rumqttc = "0.24"
+sqlx = { version = "0.7", features = ["postgres", "runtime-tokio-native-tls", "macros", "time", "uuid"] }
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+dotenvy = "0.15"
+thiserror = "1.0"
+anyhow = "1.0"
+uuid = { version = "1.7", features = ["v4", "serde"] }
+async-trait = "0.1"
+time = { version = "0.3", features = ["serde", "formatting", "parsing"] }
+notify = "6.1"
+dashmap = "5.5"
+clap = { version = "4.5", features = ["derive"] } # CLI parsing
+rand = "0.8" # Random data generation
+
+[[bin]]
+name = "poc-mqtt-backend"
+path = "src/main.rs"
+
+[[bin]]
+name = "load-tester"
+path = "src/bin/load_tester.rs"

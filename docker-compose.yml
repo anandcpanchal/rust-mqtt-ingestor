@@ -1,0 +1,74 @@
+version: '3.8'
+
+services:
+  emqx:
+    image: emqx/emqx:5.3.2
+    container_name: emqx
+    environment:
+      - "EMQX_ALLOW_ANONYMOUS=true"
+      - "EMQX_LOADED_PLUGINS=emqx_recon,emqx_retainer,emqx_management,emqx_dashboard"
+      - "EMQX_MQTT__SESSION__MAX_MQUEUE_LEN=1000000" # Correct HOCON Path
+      - "EMQX_MQTT__SESSION__MAX_SUBSCRIPTIONS=0"
+      - "EMQX_MQTT__SESSION__MAX_INFLIGHT=1000"
+    ports:
+      - "1883:1883"       # MQTT TCP
+      - "8883:8883"       # MQTT SSL
+      - "8083:8083"       # MQTT Websocket
+      - "18083:18083"     # Dashboard
+    volumes:
+      - emqx_data:/opt/emqx/data
+      - ./emqx.conf:/opt/emqx/etc/emqx.conf
+    networks:
+      - iot_net
+    healthcheck:
+      test: ["CMD", "/opt/emqx/bin/emqx", "ctl", "status"]
+      interval: 5s
+      timeout: 25s
+      retries: 5
+
+  timescaledb:
+    image: timescale/timescaledb:latest-pg14
+    container_name: timescaledb
+    environment:
+      - POSTGRES_USER=postgres
+      - POSTGRES_PASSWORD=password
+      - POSTGRES_DB=iot_db
+    ports:
+      - "5432:5432"
+    volumes:
+      - ./init.sql:/docker-entrypoint-initdb.d/init.sql
+      - timescaledb_data:/var/lib/postgresql/data
+    networks:
+      - iot_net
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  pgbouncer:
+    image: edoburu/pgbouncer
+    container_name: pgbouncer
+    environment:
+      - DB_USER=postgres
+      - DB_PASSWORD=password
+      - DB_HOST=timescaledb
+      - DB_NAME=iot_db
+      - POOL_MODE=transaction
+      - MAX_CLIENT_CONN=1000
+      - DEFAULT_POOL_SIZE=20
+      - AUTH_TYPE=plain
+    ports:
+      - "6432:5432"
+    depends_on:
+      - timescaledb
+    networks:
+      - iot_net
+
+volumes:
+  emqx_data:
+  timescaledb_data:
+
+networks:
+  iot_net:
+    driver: bridge
