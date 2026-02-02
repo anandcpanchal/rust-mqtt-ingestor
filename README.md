@@ -9,17 +9,17 @@ The system follows a **Modular Actor-like Architecture** to separate concerns an
 
 ```mermaid
 graph TD
-    Devices[IoT Devices] -->|MQTT Publish| EMQX[EMQX Broker]
-    EMQX -->|Sub: users/+/devices/+/telemetry| Ingestor[Rust Backend (Ingestor)]
+    Devices["IoT Devices"] -->|MQTT Publish| EMQX["EMQX Broker"]
+    EMQX -->|Sub: users/+/devices/+/telemetry| Ingestor["Rust Backend (Ingestor)"]
     
     subgraph "Rust Backend Service"
-        Ingestor -->|Channel (Buffer)| Executor[Batch Executor]
-        Ingestor -->|Alerts| AlertLogic[Alert Logic]
-        AlertLogic -->|Pub: users/{id}/alerts| EMQX
+        Ingestor -->|"Channel (Buffer)"| Executor["Batch Executor"]
+        Ingestor -->|Alerts| AlertLogic["Alert Logic"]
+        AlertLogic -->|"Pub: users/{id}/alerts"| EMQX
     end
     
-    Executor -->|Batch Insert| PgBouncer
-    PgBouncer -->|Connection Pool| TimescaleDB[(TimescaleDB)]
+    Executor -->|"Batch Insert"| PgBouncer
+    PgBouncer -->|"Connection Pool"| TimescaleDB[("TimescaleDB")]
 ```
 
 ### Key Components
