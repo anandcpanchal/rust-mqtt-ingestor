@@ -4,7 +4,6 @@ use crate::state::config_manager::{ConfigManager, UserConfig};
 use std::sync::Arc;
 use tracing::{info, error, instrument};
 use rumqttc::{Event, Packet, AsyncClient};
-use tokio::sync::mpsc::Sender;
 use std::time::Duration;
 
 pub struct ServiceProcessor {
@@ -103,119 +102,46 @@ pub struct IngestMessage {
     pub packet: Option<rumqttc::Publish>, // To Ack later
 }
 
-/// 1. INGEST LOOP (High-speed Producer)
-pub async fn run_ingest_loop(
+/// 1. MQTT MAINTENANCE LOOP (Config & Alerts Support)
+/// Replaces the old Ingest Loop. No longer subscribes to Telemetry.
+pub async fn run_mqtt_maintenance_loop(
     mut eventloop: rumqttc::EventLoop,
     client: AsyncClient, 
     processor: Arc<ServiceProcessor>,
-    ingest_topic: &str,
-    sender: Sender<IngestMessage>,
-    mut shutdown_signal: tokio::sync::watch::Receiver<bool>, // NEW
 ) -> anyhow::Result<()> {
     
-    // Ensure subscriptions
+    // Ensure subscriptions for CONFIG only
     client.subscribe("users/+/config", rumqttc::QoS::AtLeastOnce).await?;
-    client.subscribe(ingest_topic, rumqttc::QoS::AtLeastOnce).await?;
-    info!("Ingest Loop Started. Subscribed to {}", ingest_topic);
-
-    // Wrap sender in Option so we can drop it to signal EOF
-    let mut sender_opt = Some(sender);
-    
-    // State for Smart Logging
-    let mut is_throttled = false;
+    info!("MQTT Maintenance Loop Started. Subscribed to Configs. Telemetry handled via Kafka.");
 
     loop {
-        tokio::select! {
-            // 1. Check for Shutdown Signal
-            change = shutdown_signal.changed() => {
-                if change.is_ok() && *shutdown_signal.borrow() {
-                    if sender_opt.is_some() {
-                        info!("Shutdown Signal Received in Loop. Dropping Ingest Channel to flush Executor.");
-                        sender_opt = None; // This drops the sender, causing Receiver to returning None once empty.
-                        // We CONTINUE looping to process Acks from the Executor!
+        match eventloop.poll().await {
+            Ok(event) => {
+                match event {
+                    Event::Incoming(Packet::Publish(publish)) => {
+                        let topic = publish.topic.clone();
+                        let payload = publish.payload.clone();
+
+                        if topic.ends_with("/config") {
+                                if let Err(e) = processor.process_config_update(&topic, &payload).await {
+                                    error!("Config processing failed: {:?}", e);
+                                }
+                        }
+                        // Ignore other topics (telemetry shouldn't be here)
                     }
+                    Event::Incoming(Packet::ConnAck(_)) => {
+                        info!("MQTT Connected! Resubscribing to Configs...");
+                        client.subscribe("users/+/config", rumqttc::QoS::AtLeastOnce).await?;
+                    }
+                    _ => {}
                 }
             }
-
-            // 2. Poll MQTT Event Loop
-            event = eventloop.poll() => {
-                match event {
-                    Ok(event) => {
-                        match event {
-                            Event::Incoming(Packet::Publish(publish)) => {
-                                // If sender is dropped (shutting down), we MUST NOT process new messages.
-                                // We can either Nack them or just ignore (Broker will resend later).
-                                if sender_opt.is_none() {
-                                    // Ignoring message during shutdown phase
-                                    continue;
-                                }
-
-                                let topic = publish.topic.clone();
-                                let payload = publish.payload.clone();
-
-                                if topic.ends_with("/config") {
-                                     if let Err(e) = processor.process_config_update(&topic, &payload).await {
-                                         error!("Config processing failed: {:?}", e);
-                                     }
-                                } else {
-                                     // Telemetry
-                                     match processor.process_ingest_logic(&topic, &payload).await {
-                                        Ok(Some(telemetry)) => {
-                                            // 1. Lag Monitoring (Queue Pressure Detect)
-                                            let now = time::OffsetDateTime::now_utc();
-                                            let msg_time = telemetry.time;
-                                            let lag = now - msg_time;
-                                            
-                                            if lag.as_seconds_f64() > 5.0 {
-                                                // Log heavily delayed messages (indicates deep queue draining)
-                                                tracing::warn!("🐢 System Lagging! Processing data from {:.1}s ago (Device: {}).", lag.as_seconds_f64(), telemetry.device_id);
-                                            }
-
-                                            // Send to Batcher
-                                            let msg = IngestMessage { telemetry, packet: Some(publish) };
-                                            if let Some(tx) = &sender_opt {
-                                                // 2. Smart Backpressure Logging (Burst Handling)
-                                                let capacity = tx.capacity();
-                                                if capacity < 1000 {
-                                                    if !is_throttled {
-                                                        tracing::warn!("⚠️ Backpressure Active: Ingest Channel full ({}/10000). Pausing ingest to let DB catch up.", capacity);
-                                                        is_throttled = true;
-                                                    }
-                                                } else if is_throttled && capacity > 5000 {
-                                                    tracing::info!("✅ Backpressure Resolved: Channel recovered ({}/10000). Resuming high-speed ingest.", capacity);
-                                                    is_throttled = false;
-                                                }
-
-                                                if let Err(e) = tx.send(msg).await {
-                                                    error!("Channel closed, stopping ingest: {:?}", e);
-                                                    break;
-                                                }
-                                            }
-                                        }
-                                        Ok(None) => {} // filtered
-                                        Err(e) => {
-                                            error!("Ingest Error: {:?}", e);
-                                        }
-                                     }
-                                }
-                            }
-                            Event::Incoming(Packet::ConnAck(_)) => {
-                                info!("Connected! Resubscribing...");
-                                client.subscribe(ingest_topic, rumqttc::QoS::AtLeastOnce).await?;
-                                client.subscribe("users/+/config", rumqttc::QoS::AtLeastOnce).await?;
-                            }
-                            _ => {}
-                        }
-                    }
-                    Err(e) => {
-                        error!("MQTT Error: {:?}", e);
-                        tokio::time::sleep(Duration::from_secs(5)).await;
-                    }
-                }
+            Err(e) => {
+                error!("MQTT Error: {:?}", e);
+                tokio::time::sleep(Duration::from_secs(5)).await;
             }
         }
     }
-    Ok(())
 }
 
 /// 2. BATCH EXECUTOR (Buffer & Flush)
