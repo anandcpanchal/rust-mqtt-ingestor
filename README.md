@@ -184,3 +184,35 @@ If you are building a **Stock/Crypto Ticker** processing engine:
         VALUES ($1, $2, $3, $4)
     "#;
     ```
+
+### 4. Update Alert Logic (`src/service/processor.rs`)
+
+Modify the `process_ingest_logic` function to check for your specific business conditions.
+
+**For Logistics (Delayed Package):**
+```rust
+if package.status == "DELAYED" {
+    let alert = Alert::new(
+        package.package_id.clone(),
+        "DeliveryDelay".to_string(),
+        format!("Package {} is delayed at {}", package.package_id, package.location),
+        None,
+    );
+    self.storage.store_alert(&alert).await?; // Store in DB
+    self.broker.publish(...).await?;         // Push to MQTT
+}
+```
+
+**For Finance (Price Drop):**
+```rust
+let config = self.config_manager.get_config(&tick.symbol);
+if tick.price < config.price_floor {
+    let alert = Alert::new(
+        tick.symbol.clone(),
+        "PriceCrash".to_string(),
+        format!("{} dropped below ${}", tick.symbol, config.price_floor),
+        Some(tick.price),
+    );
+    // ... publish alert ...
+}
+```
