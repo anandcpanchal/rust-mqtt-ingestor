@@ -1,0 +1,23 @@
+[sources.emqx_source]
+type = "mqtt"
+host = "emqx"
+port = 1883
+topic = "users/+/devices/+/telemetry"
+
+
+[transforms.format_for_backend]
+type = "remap"
+inputs = ["emqx_source"]
+source = '''
+  # Parse the incoming message string as JSON
+  .payload = parse_json!(.message)
+  # Construct the exact object the Rust backend expects
+  . = { "topic": .topic, "payload": .payload }
+'''
+
+[sinks.kafka_sink]
+type = "kafka"
+inputs = ["format_for_backend"]
+bootstrap_servers = "redpanda:9092"
+topic = "iot-stream"
+encoding.codec = "json"

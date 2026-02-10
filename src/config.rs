@@ -8,8 +8,10 @@ pub struct AppConfig {
     pub mqtt_port: u16,
     pub mqtt_client_id_prefix: String,
     pub database_url: String,
-    pub telemetry_topic: String,
     pub instance_id: String,
+    pub kafka_brokers: String,
+    pub kafka_topic: String,
+    pub kafka_group: String,
 }
 
 impl AppConfig {
@@ -26,9 +28,11 @@ impl AppConfig {
                 .unwrap_or_else(|_| "backend_processor".to_string()),
             database_url: env::var("DATABASE_URL")
                 .context("DATABASE_URL must be set")?,
-            telemetry_topic: env::var("TELEMETRY_TOPIC")
-                .unwrap_or_else(|_| "$share/backend_group/users/+/devices/+/telemetry".to_string()),
+// telemetry_topic removed as we use Kafka for ingest
             instance_id: env::var("INSTANCE_ID").unwrap_or_else(|_| "1".to_string()),
+            kafka_brokers: env::var("KAFKA_BROKERS").unwrap_or_else(|_| "localhost:19092".to_string()),
+            kafka_topic: env::var("KAFKA_TOPIC").unwrap_or_else(|_| "iot-stream".to_string()),
+            kafka_group: env::var("KAFKA_GROUP").unwrap_or_else(|_| "rust-backend-group".to_string()),
         };
 
         Ok(config)

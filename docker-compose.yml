@@ -6,25 +6,39 @@ services:
     container_name: emqx
     environment:
       - "EMQX_ALLOW_ANONYMOUS=true"
+      - "EMQX_ACL_NOMATCH=allow"
       - "EMQX_LOADED_PLUGINS=emqx_recon,emqx_retainer,emqx_management,emqx_dashboard"
       - "EMQX_MQTT__SESSION__MAX_MQUEUE_LEN=1000000" # Correct HOCON Path
       - "EMQX_MQTT__SESSION__MAX_SUBSCRIPTIONS=0"
       - "EMQX_MQTT__SESSION__MAX_INFLIGHT=1000"
     ports:
-      - "1883:1883"       # MQTT TCP
-      - "8883:8883"       # MQTT SSL
-      - "8083:8083"       # MQTT Websocket
-      - "18083:18083"     # Dashboard
+      - "1883:1883" # MQTT TCP
+      - "8883:8883" # MQTT SSL
+      - "8083:8083" # MQTT Websocket
+      - "18083:18083" # Dashboard
     volumes:
       - emqx_data:/opt/emqx/data
       - ./emqx.conf:/opt/emqx/etc/emqx.conf
     networks:
       - iot_net
     healthcheck:
-      test: ["CMD", "/opt/emqx/bin/emqx", "ctl", "status"]
+      test: [ "CMD", "/opt/emqx/bin/emqx", "ctl", "status" ]
       interval: 5s
       timeout: 25s
       retries: 5
+
+  vector:
+    image: timberio/vector:nightly-alpine
+    container_name: vector
+    volumes:
+      - ./vector.toml:/etc/vector/vector.toml:ro
+    command: [ "--config", "/etc/vector/vector.toml" ]
+    depends_on:
+      - emqx
+      - redpanda
+      - redpanda-init
+    networks:
+      - iot_net
 
   timescaledb:
     image: timescale/timescaledb:latest-pg14
@@ -41,7 +55,7 @@ services:
     networks:
       - iot_net
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      test: [ "CMD-SHELL", "pg_isready -U postgres" ]
       interval: 5s
       timeout: 5s
       retries: 5
@@ -65,9 +79,66 @@ services:
     networks:
       - iot_net
 
+  redpanda:
+    image: docker.redpanda.com/redpandadata/redpanda:latest
+    container_name: redpanda
+    command:
+      - redpanda start
+      - --smp 1
+      - --overprovisioned
+      - --kafka-addr internal://0.0.0.0:9092,external://0.0.0.0:19092
+      - --advertise-kafka-addr internal://redpanda:9092,external://localhost:19092
+      - --pandaproxy-addr internal://0.0.0.0:8082,external://0.0.0.0:18082
+      - --advertise-pandaproxy-addr internal://redpanda:8082,external://localhost:18082
+      - --schema-registry-addr internal://0.0.0.0:8081,external://0.0.0.0:18081
+      - --rpc-addr redpanda:33145
+      - --advertise-rpc-addr redpanda:33145
+    ports:
+      - "18081:18081"
+      - "18082:18082"
+      - "19092:19092"
+      - "9644:9644"
+    volumes:
+      - redpanda_data:/var/lib/redpanda/data
+    networks:
+      - iot_net
+    healthcheck:
+      test: [ "CMD-SHELL", "curl -f http://localhost:9644/v1/status/ready" ]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  redpanda-init:
+    image: docker.redpanda.com/redpandadata/redpanda:latest
+    container_name: redpanda-init
+    volumes:
+      - ./init-redpanda.sh:/init-redpanda.sh
+    entrypoint: [ "/bin/sh", "/init-redpanda.sh" ]
+    depends_on:
+      redpanda:
+        condition: service_healthy
+    networks:
+      - iot_net
+
+  redpanda-console:
+    image: docker.redpanda.com/redpandadata/console:latest
+    container_name: redpanda-console
+    environment:
+      KAFKA_BROKERS: redpanda:9092
+      KAFKA_SCHEMAREGISTRY_ENABLED: "true"
+      KAFKA_SCHEMAREGISTRY_URLS: http://redpanda:8081
+    ports:
+      - "8080:8080"
+    depends_on:
+      - redpanda
+    networks:
+      - iot_net
+
 volumes:
   emqx_data:
   timescaledb_data:
+  redpanda_data:
+
 
 networks:
   iot_net:
