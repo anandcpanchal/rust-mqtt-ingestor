@@ -16,6 +16,24 @@ pub struct Telemetry { // Domain model, decoupled from DB or Wire format if need
     pub extra: std::collections::HashMap<String, serde_json::Value>,
 }
 
+impl Telemetry {
+    pub fn get_value(&self, key: &str) -> Option<f64> {
+        match key {
+            "temperature" => self.temperature,
+            "battery" => self.battery.map(|v| v as f64),
+            _ => self.extra.get(key).and_then(|v| v.as_f64()),
+        }
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct Rule {
+    pub key: String,
+    pub operator: String, // ">", "<", ">=", "<=", "=="
+    pub threshold: f64,
+    pub message: String,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Alert {
     pub id: Option<i32>, // Database ID

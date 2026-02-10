@@ -216,3 +216,65 @@ if tick.price < config.price_floor {
     // ... publish alert ...
 }
 ```
+
+---
+
+## 🔔 Dynamic Alert Configuration
+
+The system supports a dynamic rules engine. You can define custom alert thresholds for any telemetry field (including nested JSON fields) without changing code.
+
+### 1. Rule Structure (JSON)
+Each rule consists of:
+*   `key`: The JSON field name to check (e.g., "temperature", "battery", "pressure").
+*   `operator`: Comparison operator (`>`, `<`, `>=`, `<=`, `==`).
+*   `threshold`: The numeric value to compare against.
+*   `message`: Custom alert message.
+
+### 2. Adding Rules (SQL)
+To add rules for a specific user, update the `rules` JSONB column in the `user_configs` table.
+
+**Example:**
+Create an alert if `battery < 20.0` OR if a custom field `pressure > 105.5`.
+
+```sql
+INSERT INTO user_configs (user_id, temperature_max, rules)
+VALUES (
+    'user_123', 
+    80.0, 
+    '[
+        {
+            "key": "battery",
+            "operator": "<",
+            "threshold": 20.0,
+            "message": "Critical Battery Level!"
+        },
+        {
+            "key": "pressure",
+            "operator": ">",
+            "threshold": 105.5,
+            "message": "Overpressure detected"
+        }
+    ]'::jsonb
+)
+ON CONFLICT (user_id) DO UPDATE 
+SET rules = EXCLUDED.rules;
+```
+
+### 3. Adding Rules (MQTT)
+You can also push new rules dynamically via MQTT.
+
+**Topic:** `users/{user_id}/config`
+**Payload:**
+```json
+{
+  "temperature_max": 80.0,
+  "rules": [
+    {
+      "key": "vibration",
+      "operator": ">",
+      "threshold": 5.0,
+      "message": "High Vibration Detected"
+    }
+  ]
+}
+```

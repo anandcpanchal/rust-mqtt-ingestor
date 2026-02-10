@@ -37,5 +37,6 @@ CREATE INDEX IF NOT EXISTS ix_alerts_device ON alerts_history (device_id);
 -- Create User Configs Table (New for Phase 5)
 CREATE TABLE IF NOT EXISTS user_configs (
     user_id         TEXT              PRIMARY KEY,
-    temperature_max DOUBLE PRECISION  NOT NULL
+    temperature_max DOUBLE PRECISION  NOT NULL,
+    rules           JSONB             NOT NULL DEFAULT '[]'
 );
