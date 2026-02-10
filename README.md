@@ -125,7 +125,7 @@ The project includes a pre-configured `emqx-config/emqx.conf` that connects to T
 2.  **Database Setup**: The `init.sql` script automatically creates the necessary `mqtt_users` and `mqtt_acl` tables.
 3.  **Seed Users**: You must insert users into the `mqtt_users` table for the Backend and Devices to connect.
 
-👉 **See [SECURITY.md](SECURITY.md) for the full security hardening guide.**
+👉 **See [SECURITY.md](Security-Guidelines.md) for the full security hardening guide.**
 
 ---
 
