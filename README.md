@@ -50,7 +50,23 @@ graph TD
 
 ## 📊 Schema & Data Model
 
-(Same as previous, utilizing TimescaleDB `raw_telemetry` table).
+### `raw_telemetry` Table (TimescaleDB Hypertable)
+
+This table stores all incoming high-frequency data. It is partitioned by `time` for efficient time-series queries.
+
+```sql
+CREATE TABLE raw_telemetry (
+    time        TIMESTAMPTZ       NOT NULL, -- Partition Key
+    user_id     TEXT              NOT NULL, 
+    device_id   TEXT              NOT NULL,
+    sequence_id BIGINT            NOT NULL,
+    temperature DOUBLE PRECISION  NULL,
+    battery     INTEGER           NULL,
+    extra_data  JSONB             NULL,     -- Stores any extra fields
+    
+    PRIMARY KEY (time, user_id, device_id, sequence_id)
+);
+```
 
 ---
 
@@ -90,3 +106,81 @@ cargo run --bin poc-mqtt-backend
 cargo run --bin load-tester -- --users 30 --devices-per-user 3 --rate 200
 ```
 
+
+---
+
+## 🔧 How to Adapt for Your Own Data Schema
+
+To use this project as a base for a different data model (e.g., Logistics, Finance, Healthcare), follow these 3 steps:
+
+### 1. Modify Database Schema (`init.sql`)
+Update the SQL table definition to match your new data fields.
+```sql
+-- Example: Changing from "Telemetry" to "LogisticsPackage"
+CREATE TABLE raw_packages (
+    ...
+    package_id TEXT NOT NULL,
+    location   GEOMETRY(POINT, 4326),
+    status     TEXT,
+    ...
+);
+```
+
+### 2. Update Domain Model (`src/domain/mod.rs`)
+Modify the Rust struct to align with your new data.
+```rust
+#[derive(Debug, Clone, Deserialize, Serialize)]
+pub struct PackageData {
+    // ... matching fields ...
+    pub package_id: String,
+    pub location: String, 
+    // ...
+}
+```
+
+### 3. Update Persistence Layer (`src/adapters/timescale.rs`)
+Rewrite the SQL `INSERT` statement in the `store_telemetry` and `store_telemetry_batch` functions to target your new table and columns.
+```rust
+
+let query = r#"
+    INSERT INTO raw_packages (time, package_id, location, status)
+    VALUES ($1, $2, $3, $4)
+"#;
+```
+
+---
+
+### Example 2: Financial Market Data
+
+If you are building a **Stock/Crypto Ticker** processing engine:
+
+1.  **SQL Schema** (`init.sql`):
+    ```sql
+    CREATE TABLE raw_ticks (
+        time      TIMESTAMPTZ        NOT NULL,
+        symbol    TEXT               NOT NULL, -- e.g. "BTC-USD"
+        price     DOUBLE PRECISION   NOT NULL,
+        volume    DOUBLE PRECISION   NOT NULL,
+        PRIMARY KEY (time, symbol)
+    );
+    ```
+
+2.  **Rust Struct** (`src/domain/mod.rs`):
+    ```rust
+    #[derive(Debug, Clone, Deserialize, Serialize)]
+    pub struct MarketTick {
+        #[serde(with = "time::serde::iso8601")]
+        pub time: OffsetDateTime,
+        pub symbol: String,
+        pub price: f64,
+        pub volume: f64,
+    }
+    ```
+
+3.  **Persistence** (`src/adapters/timescale.rs`):
+    ```rust
+    let query = r#"
+        INSERT INTO raw_ticks (time, symbol, price, volume)
+        VALUES ($1, $2, $3, $4)
+    "#;
+    ```
