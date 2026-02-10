@@ -107,7 +107,29 @@ cargo run --bin load-tester -- --users 30 --devices-per-user 3 --rate 200
 ```
 
 
+
 ---
+
+## 🔒 Production Security
+
+For a production deployment, you **MUST** configure MQTT Authentication and ACLs to secure the system.
+
+*   **Authentication**: Disable anonymous access.
+*   **Authorization (ACLs)**: Restrict devices to their own `telemetry` topics.
+*   **TLS**: Encrypt data in transit.
+
+### EMQX Configuration (Postgres Auth)
+The project includes a pre-configured `emqx-config/emqx.conf` that connects to TimescaleDB for authentication.
+
+1.  **Mount Config**: Ensure `docker-compose.yml` mounts `./emqx-config/emqx.conf:/opt/emqx/etc/emqx.conf`.
+2.  **Database Setup**: The `init.sql` script automatically creates the necessary `mqtt_users` and `mqtt_acl` tables.
+3.  **Seed Users**: You must insert users into the `mqtt_users` table for the Backend and Devices to connect.
+
+👉 **See [SECURITY.md](SECURITY.md) for the full security hardening guide.**
+
+---
+
+
 
 ## 🔧 How to Adapt for Your Own Data Schema
 

@@ -58,8 +58,55 @@ Disable anonymous access. Use a Database or JWT for auth.
 ### C. Authorization (ACLs)
 Restrict devices to their own topics.
 
--   **Pattern:** `users/{user_id}/devices/{device_id}/...`
 -   **Rule:** Device `device_123` can ONLY publish to `.../devices/device_123/telemetry`.
+
+### D. Detailed ACL Configuration
+To achieve the restriction above, you can use **Placeholders** in your ACL rules.
+
+#### Option 1: File-Based (`acl.conf`)
+Use `%u` (username) and `%c` (clientid) to create dynamic rules.
+
+```erlang
+%% Allow any user to subscribe to their own config topic
+{allow, all, subscribe, ["users/%u/config"]}.
+
+%% Allow devices to publish ONLY to their specific telemetry topic
+%% Assuming ClientID is the DeviceID
+{allow, all, publish, ["users/%u/devices/%c/telemetry"]}.
+
+%% Deny everything else by default
+{deny, all, subscribe, ["#"]}.
+{deny, all, publish, ["#"]}.
+```
+
+#### Option 2: Database-Based (Postgres)
+If using the `mqtt_users` table, add an `mqtt_acl` table.
+
+```sql
+CREATE TABLE mqtt_acl (
+    id SERIAL PRIMARY KEY,
+    username VARCHAR(100),
+    permission VARCHAR(10), -- 'publish', 'subscribe', 'all'
+    topic VARCHAR(255),
+    action VARCHAR(10) DEFAULT 'allow'
+);
+
+-- Allow all users to subscribe to their config
+INSERT INTO mqtt_acl (username, permission, topic) VALUES ('$all', 'subscribe', 'users/%u/config');
+
+-- Allow devices to publish to their own telemetry
+-- Note: You might map username=user_id and clientid=device_id structure
+INSERT INTO mqtt_acl (username, permission, topic) VALUES ('$all', 'publish', 'users/%u/devices/%c/telemetry');
+
+-- Allow Rust Backend (username='backend_service') to publish Alers
+INSERT INTO mqtt_acl (username, permission, topic) VALUES ('backend_service', 'publish', 'users/+/alerts');
+
+-- Allow Vector Bridge (username='vector_bridge') to subscribe to all telemetry
+INSERT INTO mqtt_acl (username, permission, topic) VALUES ('vector_bridge', 'subscribe', 'users/+/devices/+/telemetry');
+
+-- Allow Vector Bridge to subscribe to all Configs (for cache updates if needed)
+INSERT INTO mqtt_acl (username, permission, topic) VALUES ('vector_bridge', 'subscribe', 'users/+/config');
+```
 
 ---
 

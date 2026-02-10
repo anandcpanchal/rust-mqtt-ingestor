@@ -34,9 +34,41 @@ CREATE TABLE IF NOT EXISTS alerts_history (
 -- Create index on alerts
 CREATE INDEX IF NOT EXISTS ix_alerts_device ON alerts_history (device_id);
 
+
 -- Create User Configs Table (New for Phase 5)
 CREATE TABLE IF NOT EXISTS user_configs (
     user_id         TEXT              PRIMARY KEY,
     temperature_max DOUBLE PRECISION  NOT NULL,
     rules           JSONB             NOT NULL DEFAULT '[]'
 );
+
+-- =============================================
+-- SECURITY SCHEMA (EMQX Authentication & ACL)
+-- =============================================
+
+-- 1. MQTT Users (Authentication)
+CREATE TABLE IF NOT EXISTS mqtt_users (
+    username        VARCHAR(100)      PRIMARY KEY,
+    password_hash   VARCHAR(100),     -- Argon2 or Bcrypt hash
+    salt            VARCHAR(40),      -- Optional: Salt for hashing
+    is_superuser    BOOLEAN           DEFAULT FALSE,
+    created_at      TIMESTAMPTZ       DEFAULT NOW()
+);
+
+-- 2. MQTT ACL (Authorization)
+CREATE TABLE IF NOT EXISTS mqtt_acl (
+    id              SERIAL            PRIMARY KEY,
+    username        VARCHAR(100)      NOT NULL,
+    permission      VARCHAR(10)       NOT NULL, -- 'publish', 'subscribe', 'all'
+    topic           VARCHAR(255)      NOT NULL,
+    action          VARCHAR(10)       NOT NULL DEFAULT 'allow', -- 'allow', 'deny'
+    created_at      TIMESTAMPTZ       DEFAULT NOW()
+);
+
+-- Index for fast ACL lookups
+CREATE INDEX IF NOT EXISTS ix_mqtt_acl_username ON mqtt_acl (username);
+
+-- Seed Default System Users (Placeholders - Change Passwords in Production!)
+-- Note: Passwords below are NOT hashed. In production, use hashed values.
+-- INSERT INTO mqtt_users (username, password_hash, is_superuser) VALUES ('admin', 'admin_hash', TRUE);
+
