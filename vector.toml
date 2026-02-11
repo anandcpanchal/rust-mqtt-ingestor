@@ -3,6 +3,8 @@ type = "mqtt"
 host = "emqx"
 port = 1883
 topic = "users/+/devices/+/telemetry"
+user = "backend_service"
+password = "secure_password"
 
 
 [transforms.format_for_backend]

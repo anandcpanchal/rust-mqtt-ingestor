@@ -42,7 +42,7 @@ graph TD
     *   **Alerting**: Checks thresholds and publishes alerts back to EMQX.
 
 4.  **Infrastructure**:
-    *   **EMQX 5.0**: Enterprise-grade MQTT Broker.
+    *   **EMQX 5.3**: Open Source MQTT Broker.
     *   **TimescaleDB**: Time-series optimized PostgreSQL.
     *   **Redpanda Console**: UI for monitoring topics (Port `8080`).
 
@@ -137,6 +137,34 @@ cargo run --bin load-tester -- --users 30 --devices-per-user 3 --rate 200
 ```
 
 
+
+
+---
+
+
+### 6. Configure Open Source Bridge (Vector) (Data Integration)
+The system uses **Vector** (`timberio/vector`) as a sidecar to bridge MQTT messages to Redpanda (Kafka), fulfilling the Open Source requirement.
+
+**Configuration:**
+The bridge logic is defined in `vector.toml`.
+*   **Source**: MQTT (EMQX).
+*   **Transform**: Remaps JSON payload.
+*   **Sink**: Kafka (Redpanda).
+
+**Authentication:**
+Vector must authenticate with EMQX to subscribe to telemetry topics. The credentials are configured in `vector.toml`:
+```toml
+[sources.emqx_source.auth]
+strategy = "basic"
+user = "backend_service"
+password = "secure_password"
+```
+
+**Verification:**
+Check Vector logs to ensure successful connection:
+```bash
+docker logs vector
+```
 
 ---
 

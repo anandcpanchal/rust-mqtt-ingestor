@@ -4,6 +4,8 @@ use serde::Serialize;
 use std::time::Duration;
 use tokio::time;
 use rand::Rng;
+use sqlx::postgres::PgPoolOptions;
+
 
 #[derive(Parser, Debug)]
 #[command(author, version, about, long_about = None)]
@@ -31,6 +33,18 @@ struct Args {
     /// Duration of test in seconds (0 for infinite)
     #[arg(long, default_value_t = 60)]
     duration: u64,
+
+    /// Database URL (defaults to adding user/pass if not present)
+    #[arg(long, default_value = "postgres://postgres:password@localhost:5432/iot_db")]
+    database_url: String,
+
+    /// Superuser for load testing
+    #[arg(long, default_value = "load_tester")]
+    superuser: String,
+
+    /// Superuser password
+    #[arg(long, default_value = "load_tester_password")]
+    superuser_password: String,
 }
 
 #[derive(Serialize)]
@@ -47,9 +61,40 @@ async fn main() -> anyhow::Result<()> {
     let args = Args::parse();
     println!("Starting Load Tester with config: {:?}", args);
 
+    // 0. Connect to Database & Register Users
+    println!("Connecting to Database...");
+    let pool = PgPoolOptions::new()
+        .max_connections(5)
+        .connect(&args.database_url)
+        .await?;
+
+    // Register Superuser
+    println!("Registering Superuser '{}'...", args.superuser);
+    sqlx::query(
+        "INSERT INTO mqtt_users (username, password_hash, is_superuser) VALUES ($1, $2, TRUE) ON CONFLICT (username) DO UPDATE SET password_hash = $2"
+    )
+    .bind(&args.superuser)
+    .bind(&args.superuser_password)
+    .execute(&pool)
+    .await?;
+
+    // Register Simulated Users (Optional but good for completeness if we add user-level ACLs later)
+    println!("Registering {} simulated users...", args.users);
+    for i in 1..=args.users {
+        let username = format!("user_{}", i);
+        sqlx::query(
+            "INSERT INTO mqtt_users (username, password_hash, is_superuser) VALUES ($1, 'password', FALSE) ON CONFLICT (username) DO NOTHING"
+        )
+        .bind(&username)
+        .execute(&pool)
+        .await?;
+    }
+    println!("User registration complete.");
+
     // 1. Setup MQTT Client
     let client_id = format!("load_tester_{}", uuid::Uuid::new_v4());
     let mut mqttoptions = MqttOptions::new(client_id, &args.host, args.port);
+    mqttoptions.set_credentials(&args.superuser, &args.superuser_password); // AUTHENTICATION ADDED
     mqttoptions.set_keep_alive(Duration::from_secs(5));
     mqttoptions.set_clean_session(true);
 
@@ -117,3 +162,4 @@ async fn main() -> anyhow::Result<()> {
     println!("Load Test Complete. Total messages sent: {}", total_sent);
     Ok(())
 }
+
