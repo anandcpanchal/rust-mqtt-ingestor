@@ -11,6 +11,7 @@ services:
       - "EMQX_MQTT__SESSION__MAX_MQUEUE_LEN=1000000" # Correct HOCON Path
       - "EMQX_MQTT__SESSION__MAX_SUBSCRIPTIONS=0"
       - "EMQX_MQTT__SESSION__MAX_INFLIGHT=1000"
+      - "EMQX_MQTT__SESSION__MAX_INFLIGHT=1000"
     ports:
       - "1883:1883" # MQTT TCP
       - "8883:8883" # MQTT SSL
@@ -18,7 +19,9 @@ services:
       - "18083:18083" # Dashboard
     volumes:
       - emqx_data:/opt/emqx/data
+      - emqx_data:/opt/emqx/data
       - ./emqx-config/emqx.conf:/opt/emqx/etc/emqx.conf
+      - ./emqx-config/acl.conf:/opt/emqx/etc/acl.conf
     networks:
       - iot_net
     healthcheck:

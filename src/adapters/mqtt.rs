@@ -24,7 +24,8 @@ impl MqttAdapter {
             &config.mqtt_host,
             config.mqtt_port,
         );
-        mqttoptions.set_keep_alive(Duration::from_secs(5));
+        mqttoptions.set_credentials(&config.mqtt_username, &config.mqtt_password);
+        mqttoptions.set_keep_alive(Duration::from_secs(30));
         
         // Reliability settings for QoS 1
         mqttoptions.set_clean_session(false); // Persistent Session: Broker queues msgs while we restart

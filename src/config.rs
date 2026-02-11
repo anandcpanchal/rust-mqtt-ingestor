@@ -7,6 +7,8 @@ pub struct AppConfig {
     pub mqtt_host: String,
     pub mqtt_port: u16,
     pub mqtt_client_id_prefix: String,
+    pub mqtt_username: String,
+    pub mqtt_password: String,
     pub database_url: String,
     pub instance_id: String,
     pub kafka_brokers: String,
@@ -26,6 +28,8 @@ impl AppConfig {
                 .context("MQTT_PORT must be a valid u16")?,
             mqtt_client_id_prefix: env::var("MQTT_CLIENT_ID_PREFIX")
                 .unwrap_or_else(|_| "backend_processor".to_string()),
+            mqtt_username: env::var("MQTT_USERNAME").unwrap_or_else(|_| "backend_service".to_string()),
+            mqtt_password: env::var("MQTT_PASSWORD").unwrap_or_else(|_| "secure_password".to_string()),
             database_url: env::var("DATABASE_URL")
                 .context("DATABASE_URL must be set")?,
 // telemetry_topic removed as we use Kafka for ingest

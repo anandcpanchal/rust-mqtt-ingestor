@@ -88,20 +88,50 @@ CREATE TABLE raw_telemetry (
 ### Prerequisites
 *   Docker & Docker Compose
 *   Rust Toolchain (`cargo`)
+*   PostgreSQL Client (`psql`) - Optional but recommended
 
 ### 1. Start Infrastructure
+Start EMQX, Redpanda, TimescaleDB, and Vector:
 ```bash
 docker-compose up -d
 ```
-*   **Wait** for `redpanda-init` to finish creating the topic (check `docker-compose logs redpanda-init`).
-*   **Check UI**: http://localhost:8080 (Redpanda Console).
+*   **Wait** for `redpanda-init` to finish creating the topic (check `docker-compose logs -f redpanda-init`).
+*   **Check Redpanda Console**: http://localhost:8080
+*   **Check EMQX Dashboard**: http://localhost:18083 (admin/public)
 
-### 2. Run Backend
+### 2. Initialize Database & Security
+The `utils_db` container runs `init.sql`, creating tables and default users.
+However, for security, you should verify the `backend_service` user exists.
+
+**Add Backend User (if not exists):**
+```bash
+docker exec -it timescaledb psql -U postgres -d iot_db -c "INSERT INTO mqtt_users (username, password_hash, is_superuser) VALUES ('backend_service', 'secure_password', TRUE) ON CONFLICT (username) DO NOTHING;"
+```
+
+**Add Device User (for testing):**
+```bash
+docker exec -it timescaledb psql -U postgres -d iot_db -c "INSERT INTO mqtt_users (username, password_hash, is_superuser) VALUES ('device_001', 'device_password', FALSE) ON CONFLICT (username) DO NOTHING;"
+```
+
+### 3. Configure Backend
+Ensure your `.env` file has the correct credentials (matches DB insert above):
+```bash
+MQTT_HOST=localhost
+MQTT_PORT=1883
+MQTT_USERNAME=backend_service
+MQTT_PASSWORD=secure_password
+```
+
+### 4. Run Backend
 ```bash
 cargo run --bin poc-mqtt-backend
 ```
+You should see: `MQTT Connected! Resubscribing to Configs...`
 
-### 3. Run Load Tester
+### 5. Run Load Tester
+The load tester simulates devices. It also needs credentials.
+*Note: The load tester currently uses a fixed user/pass or needs to be updated to support auth. For now, ensure anonymous auth is disabled only if load tester supports creds.*
+
 ```bash
 cargo run --bin load-tester -- --users 30 --devices-per-user 3 --rate 200
 ```
