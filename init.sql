@@ -1,5 +1,7 @@
 -- Enable TimescaleDB extension
 CREATE EXTENSION IF NOT EXISTS timescaledb;
+-- Enable pgcrypto for password hashing (optional but good practice)
+CREATE EXTENSION IF NOT EXISTS pgcrypto;
 
 -- Create Raw Telemetry Table
 CREATE TABLE IF NOT EXISTS raw_telemetry (
@@ -69,5 +71,10 @@ CREATE INDEX IF NOT EXISTS ix_mqtt_acl_username ON mqtt_acl (username);
 
 -- Seed Default System Users (Placeholders - Change Passwords in Production!)
 -- Note: Passwords below are NOT hashed. In production, use hashed values.
+INSERT INTO mqtt_users (username, password_hash, is_superuser) VALUES ('backend_service', 'secure_password', FALSE);
 -- INSERT INTO mqtt_users (username, password_hash, is_superuser) VALUES ('admin', 'admin_hash', TRUE);
+
+-- Seed Default ACLs
+-- Allow backend_service to subscribe to all telemetry
+INSERT INTO mqtt_acl (username, permission, topic, action) VALUES ('backend_service', 'subscribe', 'users/+/devices/+/telemetry', 'allow');
 

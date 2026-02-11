@@ -1,2 +1,3 @@
 .agent
 target
+setup_dev.sh

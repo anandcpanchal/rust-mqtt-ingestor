@@ -2,8 +2,7 @@ use rdkafka::config::ClientConfig;
 use rdkafka::consumer::{StreamConsumer, Consumer};
 use rdkafka::message::Message;
 use tracing::{info, error, warn, instrument};
-use std::sync::Arc;
-use crate::service::processor::{ServiceProcessor, IngestMessage};
+use crate::service::worker_pool::RawIngestMessage;
 use tokio::sync::mpsc::Sender;
 
 pub struct KafkaAdapter {
@@ -14,9 +13,7 @@ pub struct KafkaAdapter {
 #[derive(serde::Deserialize, Debug)]
 struct EmqxBridgeMessage {
     topic: String,
-    payload: serde_json::Value, // Payload can be string or object
-    // timestamp: u64,
-    // clientid: String,
+    payload: serde_json::Value, 
 }
 
 impl KafkaAdapter {
@@ -37,12 +34,11 @@ impl KafkaAdapter {
         }
     }
 
-    #[instrument(skip(self, processor, sender, shutdown_signal), fields(topic = %self.topic))]
+    #[instrument(skip(self, sender, shutdown_signal), fields(topic = %self.topic))]
     pub async fn run_loop(
         &self,
-        processor: Arc<ServiceProcessor>,
-        sender: Sender<IngestMessage>,
-        mut shutdown_signal: tokio::sync::watch::Receiver<bool>, // Add Shutdown Signal logic!
+        sender: Sender<RawIngestMessage>,
+        mut shutdown_signal: tokio::sync::watch::Receiver<bool>,
     ) -> anyhow::Result<()> {
         
         self.consumer.subscribe(&[&self.topic]).expect("Can't subscribe to specified topic");
@@ -63,11 +59,8 @@ impl KafkaAdapter {
                         Ok(m) => {
                             if let Some(payload_bytes) = m.payload() {
                                 // 1. Determine Input Format
-                                // EMQX Bridge usually sends a JSON wrapper.
-                                // We try to parse as EmqxBridgeMessage first.
                                 let (original_topic, original_payload) = match serde_json::from_slice::<EmqxBridgeMessage>(payload_bytes) {
                                     Ok(bridge_msg) => {
-                                        // Payload inside might be a String (JSON stringified) or Object
                                         let bytes = match bridge_msg.payload {
                                             serde_json::Value::String(s) => s.into_bytes(),
                                             v => serde_json::to_vec(&v).unwrap_or_default(),
@@ -75,27 +68,20 @@ impl KafkaAdapter {
                                         (bridge_msg.topic, bytes)
                                     },
                                     Err(_) => {
-                                        // Fallback: Assume raw payload if bridge is configured to "Raw"
-                                        // But wait, we need the TOPIC to extract UserID!
-                                        // If we can't get the topic, we might fail to process alerts correctly.
-                                        // For now, let's treat it as a raw payload and maybe topic is in key?
-                                        // Or just log warn and skip.
                                         warn!("Received non-bridge format message. Skipping (need topic for logic).");
                                         continue;
                                     }
                                 };
                                 
-                                // 2. Process Logic (Same as before)
-                                match processor.process_ingest_logic(&original_topic, &original_payload).await {
-                                    Ok(Some(telemetry)) => {
-                                        let msg = IngestMessage { telemetry, packet: None }; // No MQTT Packet to Ack
-                                        if let Err(e) = sender.send(msg).await {
-                                             error!("Channel closed: {:?}", e);
-                                             break; 
-                                        }
-                                    },
-                                    Ok(None) => {}, // Filtered
-                                    Err(e) => error!("Processing error: {:?}", e),
+                                // 2. Send to Worker Pool (Decoupled)
+                                let msg = RawIngestMessage {
+                                    topic: original_topic,
+                                    payload: original_payload,
+                                };
+                                
+                                if let Err(e) = sender.send(msg).await {
+                                     error!("Worker Pool Channel closed: {:?}", e);
+                                     break; 
                                 }
                             }
                         }

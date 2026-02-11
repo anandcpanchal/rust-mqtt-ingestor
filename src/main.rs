@@ -70,7 +70,11 @@ async fn main() -> anyhow::Result<()> {
     let processor = Arc::new(ServiceProcessor::new(storage_repo.clone(), mqtt_adapter, config_manager));
 
     // 7. Setup Pipeline Channels
+    // Channel 1: Worker -> Batch Executor (IngestMessage)
     let (tx, rx) = tokio::sync::mpsc::channel(10000);
+    
+    // Channel 2: Kafka -> Worker (RawIngestMessage)
+    let (raw_tx, raw_rx) = tokio::sync::mpsc::channel(10000);
 
     // 8. Start Background Tasks
 
@@ -87,12 +91,17 @@ async fn main() -> anyhow::Result<()> {
         run_batch_executor(rx, storage_for_executor, client_for_executor).await;
     });
 
-    // 8b. Kafka Ingest Loop (Producer to Internal Channel)
+    // 8b. Worker Pool
+    let worker_pool = crate::service::worker_pool::WorkerPool::new(processor.clone(), 4);
+    let worker_handle = tokio::spawn(async move {
+        worker_pool.run(raw_rx, tx).await;
+    });
+
+    // 8c. Kafka Ingest Loop (Producer to Worker Pool)
     let (shutdown_tx, shutdown_rx) = tokio::sync::watch::channel(false);
-    let processor_for_kafka = processor.clone();
     
     let kafka_handle = tokio::spawn(async move {
-        if let Err(e) = kafka_adapter.run_loop(processor_for_kafka, tx, shutdown_rx).await {
+        if let Err(e) = kafka_adapter.run_loop(raw_tx, shutdown_rx).await {
             error!("Kafka Ingest Loop Error: {:?}", e);
         }
     });
@@ -120,7 +129,10 @@ async fn main() -> anyhow::Result<()> {
     info!("Waiting for Batch Executor to flush...");
     // Wait for Kafka loop to exit (it waits for shutdown signal)
     let _ = tokio::join!(kafka_handle); 
-    // Logic: Kafka loop exits -> drops `tx` -> Executor drains `rx` -> Executor exits.
+    
+    info!("Waiting for Worker Pool to stop...");
+    let _ = tokio::join!(worker_handle);
+    // Logic: Kafka loop exits -> drops `raw_tx` -> Worker exits -> drops `tx` -> Executor drains `rx` -> Executor exits.
 
     let timeout = std::time::Duration::from_secs(20);
     match tokio::time::timeout(timeout, executor_handle).await {
