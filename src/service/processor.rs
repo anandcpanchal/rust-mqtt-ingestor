@@ -54,22 +54,7 @@ impl ServiceProcessor {
         if let Some(user_id) = uid {
             let config = self.config_manager.get_config(user_id);
             
-            // 1. Legacy Static Check (Backwards Compatibility)
-            let max_temp = config.temperature_max;
-            if let Some(temp) = telemetry.temperature {
-                if temp > max_temp {
-                    let alert = Alert::new(
-                        telemetry.device_id.clone(),
-                        "HighTemperature".to_string(),
-                        format!("Temperature {:.2} exceeds user limit {:.2}", temp, max_temp),
-                        Some(temp),
-                    );
-                    self.storage.store_alert(&alert).await?;
-                    let alert_topic = format!("users/{}/alerts", user_id);
-                    self.broker.publish(&alert_topic, serde_json::to_vec(&alert)?).await?;
-                    info!("Legacy Alert published to {}", alert_topic);
-                }
-            }
+
 
             // 2. Dynamic Rules Engine
             for rule in &config.rules {
@@ -312,7 +297,7 @@ mod tests {
             Rule { key: "temperature".into(), operator: ">".into(), threshold: 50.0, message: "Too Hot!".into() },
             Rule { key: "battery".into(), operator: "<".into(), threshold: 20.0, message: "Low Battery".into() },
         ];
-        config_manager.inject_config("test_user".to_string(), UserConfig { temperature_max: 100.0, rules });
+        config_manager.inject_config("test_user".to_string(), UserConfig { rules });
 
         let processor = ServiceProcessor::new(storage.clone(), broker.clone(), config_manager);
 

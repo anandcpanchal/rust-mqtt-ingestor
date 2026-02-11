@@ -317,11 +317,16 @@ To add rules for a specific user, update the `rules` JSONB column in the `user_c
 Create an alert if `battery < 20.0` OR if a custom field `pressure > 105.5`.
 
 ```sql
-INSERT INTO user_configs (user_id, temperature_max, rules)
 VALUES (
     'user_123', 
-    80.0, 
     '[
+        {
+            "key": "temperature",
+            "operator": ">",
+            "threshold": 80.0,
+            "message": "High Temperature Alert"
+        },
+
         {
             "key": "battery",
             "operator": "<",
@@ -347,8 +352,14 @@ You can also push new rules dynamically via MQTT.
 **Payload:**
 ```json
 {
-  "temperature_max": 80.0,
   "rules": [
+    {
+      "key": "temperature",
+      "operator": ">",
+      "threshold": 80.0,
+      "message": "High Temperature Alert"
+    },
+
     {
       "key": "vibration",
       "operator": ">",
