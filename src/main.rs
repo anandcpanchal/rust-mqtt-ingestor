@@ -25,6 +25,11 @@ async fn main() -> anyhow::Result<()> {
 
     info!("Starting IoT Rust Backend (Kafka Consumer Mode)...");
 
+    // 1b. Initialize Metrics
+    let builder = metrics_exporter_prometheus::PrometheusBuilder::new();
+    builder.with_http_listener(([0, 0, 0, 0], 9000)).install().expect("failed to install Prometheus recorder");
+    info!("Prometheus Metrics listening on 0.0.0.0:9000");
+
     // 2. Load Configuration
     let config = match AppConfig::load() {
         Ok(c) => c,
@@ -78,17 +83,14 @@ async fn main() -> anyhow::Result<()> {
 
     // 8. Start Background Tasks
 
-    // 8a. Batch Executor (Consumer of Internal Channel -> DB)
+    // 4b. Initialize Batch Executor (Consumer of Internal Channel -> DB)
+    // Re-using storage_repo and mqtt_client clones
     let storage_for_executor = storage_repo.clone();
-    let client_for_executor = mqtt_client.clone(); // Still needed for Acks? 
-    // Wait, Executor tries to Ack MQTT packets. 
-    // But KafkaConsumer sends `packet: None`. 
-    // So `client_for_executor` isn't really used for Acks anymore.
-    // However, the signature of `run_batch_executor` requires it. 
-    // We pass it, but it will be idle for telemetry Acks.
+    let _client_for_executor = mqtt_client.clone();
     
     let executor_handle = tokio::spawn(async move {
-        run_batch_executor(rx, storage_for_executor, client_for_executor).await;
+        // Instrument Batch Executor task
+        run_batch_executor(rx, storage_for_executor, _client_for_executor).await;
     });
 
     // 8b. Worker Pool

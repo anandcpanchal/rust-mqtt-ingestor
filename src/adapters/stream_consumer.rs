@@ -79,6 +79,12 @@ impl KafkaAdapter {
                                     payload: original_payload,
                                 };
                                 
+                                // Metrics
+                                let topic_label = msg.topic.clone();
+                                let len = msg.payload.len() as f64;
+                                metrics::counter!("mqtt_messages_received_total", 1, "topic" => topic_label.clone());
+                                metrics::histogram!("mqtt_message_size_bytes", len, "topic" => topic_label);
+                                
                                 if let Err(e) = sender.send(msg).await {
                                      error!("Worker Pool Channel closed: {:?}", e);
                                      break; 

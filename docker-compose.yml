@@ -30,6 +30,25 @@ services:
       timeout: 25s
       retries: 5
 
+  backend:
+    build: .
+    container_name: backend
+    environment:
+      - DATABASE_URL=postgres://postgres:password@timescaledb:5432/iot_db
+      - MQTT_HOST=emqx
+      - KAFKA_BROKERS=redpanda:9092
+    ports:
+      - "9000:9000" # Prometheus Metrics
+    depends_on:
+      timescaledb:
+        condition: service_healthy
+      redpanda:
+        condition: service_healthy
+      emqx:
+        condition: service_healthy
+    networks:
+      - iot_net
+    restart: always
   vector:
     image: timberio/vector:nightly-alpine
     container_name: vector

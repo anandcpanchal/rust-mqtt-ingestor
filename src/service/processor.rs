@@ -33,7 +33,6 @@ impl ServiceProcessor {
              return Err(anyhow::anyhow!("Empty device_id"));
         }
 
-        // 3. Alert Logic (Happens immediately)
         // 3. Alert & Key Logic (Happens immediately)
         // Extract User ID
         let parts: Vec<&str> = topic.split('/').collect();
@@ -51,10 +50,8 @@ impl ServiceProcessor {
         let mut telemetry = telemetry;
         telemetry.user_id = user_id.clone();
 
-        if let Some(user_id) = uid {
-            let config = self.config_manager.get_config(user_id);
-            
-
+        if let Some(uid_str) = uid {
+            let config = self.config_manager.get_config(uid_str);
 
             // 2. Dynamic Rules Engine
             for rule in &config.rules {
@@ -78,9 +75,14 @@ impl ServiceProcessor {
                         
                         self.storage.store_alert(&alert).await?;
                         
-                        let alert_topic = format!("users/{}/alerts", user_id);
+                        let alert_topic = format!("users/{}/alerts", uid_str);
                         self.broker.publish(&alert_topic, serde_json::to_vec(&alert)?).await?;
                         info!("Dynamic Alert ({}) published to {}", rule.key, alert_topic);
+                        
+                        // Metrics: Alerts Triggered
+                        let r_key = rule.key.clone();
+                        let u_id = uid_str.to_string();
+                        metrics::counter!("alerts_triggered_total", 1, "rule" => r_key, "user_id" => u_id);
                     }
                 }
             }
@@ -195,9 +197,19 @@ pub async fn run_batch_executor(
 
         // Flush Batch
         if !batch_telemetry.is_empty() {
+             let batch_len = batch_telemetry.len() as f64;
+             metrics::histogram!("batch_size", batch_len);
+             let start = std::time::Instant::now();
+
             // Attempt Fast Batch Insert
             match storage.store_telemetry_batch(&batch_telemetry).await {
                 Ok(_) => {
+                    // Metrics: DB duration & rows
+                    let duration = start.elapsed().as_secs_f64();
+                    let rows = batch_telemetry.len() as u64;
+                    metrics::histogram!("db_write_duration_seconds", duration);
+                    metrics::counter!("total_rows_inserted", rows);
+                    
                     // Happy Path: Ack all
                     for pkt in batch_packets {
                          // Fire and forget ack

@@ -14,9 +14,10 @@ graph TD
     
     subgraph "Rust Backend Service"
         Redpanda -->|Sub: iot-stream| Consumer["Kafka Consumer"]
-        Consumer -->|"Channel"| Executor["Batch Executor"]
-        Consumer -->|Alerts| AlertLogic["Alert Logic"]
+        Consumer -->|"Channel (Raw)"| WorkerPool["Worker Pool (x4)"]
+        WorkerPool -->|Process & Alert| AlertLogic["Alert Logic"]
         AlertLogic -->|"Pub (MQTT)"| EMQX
+        WorkerPool -->|"Channel (Batch)"| Executor["Batch Executor"]
     end
     
     Executor -->|"Batch Insert"| PgBouncer
@@ -37,8 +38,9 @@ graph TD
     *   Handles Format Transformation (JSON Parser).
 
 3.  **Rust Backend**:
-    *   **Consumer**: Reads from Redpanda using `rdkafka`.
-    *   **Batch Executor**: Buffers up to 1,000 messages or 100ms before Bulk Insert.
+    *   **Kafka Consumer**: Fetches messages from Redpanda and pushes them to a local channel. Zero processing logic here to avoid blocking heartbeat.
+    *   **Worker Pool**: A pool of concurrent workers (default: 4) that parse, validate, and process business logic (Alerts).
+    *   **Batch Executor**: Buffers processed telemetry up to 1,000 messages or 100ms before Bulk Insert.
     *   **Alerting**: Checks thresholds and publishes alerts back to EMQX.
 
 4.  **Infrastructure**:
