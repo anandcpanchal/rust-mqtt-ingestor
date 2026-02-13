@@ -170,6 +170,39 @@ docker logs vector
 
 ---
 
+## 📈 Observability & Monitoring
+
+The system includes a fully configured **Prometheus + Grafana** stack for real-time monitoring.
+
+### 1. Access Dashboard
+*   **Grafana**: [http://localhost:3000](http://localhost:3000)
+*   **User/Pass**: `admin` / `admin`
+*   **Dashboard**: "Backend Overview" (Auto-provisioned)
+
+### 2. Key Metrics
+*   `mqtt_messages_received_total`: High-frequency ingestion rate from Kafka.
+*   `worker_processing_duration_seconds`: End-to-end processing latency (P95/P99).
+*   `db_write_duration_seconds`: TimescaleDB insertion latency.
+*   `total_rows_inserted`: Database throughput.
+*   `alerts_triggered_total`: Business rule violations (e.g., Temp > 80).
+
+### 3. Health Indicators
+The dashboard uses a traffic-light system for instant status:
+*   **Service Health**: 🟢 **UP** / 🔴 **DOWN** (Container status)
+*   **Activity**: 🔵 **Blue (IDLE)** vs 🟢 **Green (ACTIVE)**
+*   **Errors**: 🟢 **Green (0)** vs 🔴 **Red (>0)**
+
+**Status Matrix**
+
+| State | Service Health | Ingestion/DB Panels | Error Panel |
+| :--- | :--- | :--- | :--- |
+| **Active & Healthy** | 🟢 **UP** | 🟢 **Green** (> 0) | 🟢 **0** |
+| **Idle & Healthy** | 🟢 **UP** | 🔵 **Blue** (0) | 🟢 **0** |
+| **Backend Down** | 🔴 **DOWN** | ⚪️ *No Data* | ⚪️ *No Data* |
+| **DB/System Failure** | 🟢 **UP** | 🔵 **Blue** (or Green) | 🔴 **Red** (> 0) |
+
+---
+
 ## 🔒 Production Security
 
 For a production deployment, you **MUST** configure MQTT Authentication and ACLs to secure the system.
