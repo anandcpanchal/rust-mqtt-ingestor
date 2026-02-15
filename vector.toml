@@ -5,6 +5,7 @@ port = 1883
 topic = "users/+/devices/+/telemetry"
 user = "backend_service"
 password = "secure_password"
+client_id = "vector-bridge"
 
 
 [transforms.format_for_backend]

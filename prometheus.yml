@@ -6,3 +6,12 @@ scrape_configs:
     fallback_scrape_protocol: PrometheusText0.0.4
     static_configs:
       - targets: ['backend:9000']
+
+  - job_name: 'cadvisor'
+    static_configs:
+      - targets: ['cadvisor:8080']
+
+  - job_name: 'redpanda'
+    metrics_path: /public_metrics
+    static_configs:
+      - targets: ['redpanda:9644']
