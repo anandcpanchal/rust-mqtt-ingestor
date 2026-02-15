@@ -40,17 +40,19 @@ pub struct Alert {
     #[serde(with = "time::serde::iso8601")]
     pub created_at: OffsetDateTime,
     pub device_id: String,
+    pub user_id: String, // Added user_id
     pub alert_type: String, // e.g., "CriticalTemp", "LowBattery"
     pub message: String,
     pub value: Option<f64>,
 }
 
 impl Alert {
-    pub fn new(device_id: String, alert_type: String, message: String, value: Option<f64>) -> Self {
+    pub fn new(device_id: String, user_id: String, alert_type: String, message: String, value: Option<f64>) -> Self {
         Self {
             id: None,
             created_at: OffsetDateTime::now_utc(),
             device_id,
+            user_id,
             alert_type,
             message,
             value,

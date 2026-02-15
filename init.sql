@@ -30,7 +30,8 @@ CREATE TABLE IF NOT EXISTS alerts_history (
     device_id   TEXT              NOT NULL,
     alert_type  TEXT              NOT NULL,
     message     TEXT              NOT NULL,
-    value       DOUBLE PRECISION  NULL
+    value       DOUBLE PRECISION  NULL,
+    user_id     TEXT              NOT NULL DEFAULT 'unknown'
 );
 
 -- Create index on alerts

@@ -25,6 +25,7 @@ rand = "0.8" # Random data generation
 rdkafka = { version = "0.36", features = ["cmake-build"] }
 metrics = "0.21"
 metrics-exporter-prometheus = "0.12"
+metrics-util = "0.15"
 [[bin]]
 name = "poc-mqtt-backend"
 path = "src/main.rs"

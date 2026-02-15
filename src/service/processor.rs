@@ -68,6 +68,7 @@ impl ServiceProcessor {
                     if triggered {
                         let alert = Alert::new(
                             telemetry.device_id.clone(),
+                            uid_str.to_string(), // Pass user_id
                             format!("Rule:{}", rule.key), // Alert Type
                             rule.message.clone(),
                             Some(val),

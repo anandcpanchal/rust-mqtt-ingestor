@@ -29,7 +29,10 @@ async fn main() -> anyhow::Result<()> {
     let builder = metrics_exporter_prometheus::PrometheusBuilder::new();
     builder
         .with_http_listener(([0, 0, 0, 0], 9000))
-        .idle_timeout(std::time::Duration::from_secs(60))
+        .idle_timeout(
+            metrics_util::MetricKindMask::ALL,
+            Some(std::time::Duration::from_secs(60)),
+        )
         .install()
         .expect("failed to install Prometheus recorder");
     info!("Prometheus Metrics listening on 0.0.0.0:9000");

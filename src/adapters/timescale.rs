@@ -50,13 +50,14 @@ impl StorageRepository for TimescaleRepository {
     #[instrument(skip(self, alert), fields(device_id = %alert.device_id, alert_type = %alert.alert_type))]
     async fn store_alert(&self, alert: &Alert) -> anyhow::Result<()> {
         let query = r#"
-            INSERT INTO alerts_history (created_at, device_id, alert_type, message, value)
-            VALUES ($1, $2, $3, $4, $5)
+            INSERT INTO alerts_history (created_at, device_id, user_id, alert_type, message, value)
+            VALUES ($1, $2, $3, $4, $5, $6)
         "#;
 
         sqlx::query(query)
             .bind(alert.created_at)
             .bind(&alert.device_id)
+            .bind(&alert.user_id)
             .bind(&alert.alert_type)
             .bind(&alert.message)
             .bind(alert.value)
