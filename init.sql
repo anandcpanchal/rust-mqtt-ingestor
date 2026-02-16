@@ -38,6 +38,23 @@ CREATE TABLE IF NOT EXISTS alerts_history (
 CREATE INDEX IF NOT EXISTS ix_alerts_device ON alerts_history (device_id);
 
 
+-- Create Active Alerts Table (Stateful)
+CREATE TABLE IF NOT EXISTS active_alerts (
+    user_id         TEXT NOT NULL,
+    device_id       TEXT NOT NULL,
+    rule_id         TEXT NOT NULL, -- e.g., 'temperature_threshold'
+    start_time      TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    last_seen       TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    status          TEXT NOT NULL, -- 'Active', 'Snoozed', 'Disabled'
+    snooze_until    TIMESTAMPTZ NULL,
+    current_value   DOUBLE PRECISION NULL,
+    PRIMARY KEY (user_id, device_id, rule_id)
+);
+
+-- Update Alerts History to track state transitions
+ALTER TABLE alerts_history ADD COLUMN IF NOT EXISTS status TEXT DEFAULT 'Triggered';
+ALTER TABLE alerts_history ADD COLUMN IF NOT EXISTS rule_id TEXT DEFAULT 'unknown';
+
 -- Create User Configs Table (New for Phase 5)
 CREATE TABLE IF NOT EXISTS user_configs (
     user_id         TEXT              PRIMARY KEY,

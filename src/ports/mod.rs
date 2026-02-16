@@ -13,6 +13,18 @@ pub trait StorageRepository: Send + Sync {
 
     /// Persist a batch of telemetry data.
     async fn store_telemetry_batch(&self, batch: &[Telemetry]) -> anyhow::Result<()>;
+
+    /// Upsert an active alert. Returns an Alert event if state changed to Active (for publishing).
+    async fn upsert_active_alert(&self, alert: &crate::domain::ActiveAlert, message: &str) -> anyhow::Result<Option<Alert>>;
+
+    /// Resolve an active alert. Returns an Alert event if it was unresolved (for publishing).
+    async fn resolve_active_alert(&self, user_id: &str, device_id: &str, rule_id: &str) -> anyhow::Result<Option<Alert>>;
+
+    /// Snooze an active alert.
+    async fn snooze_active_alert(&self, user_id: &str, device_id: &str, rule_id: &str, duration: i64) -> anyhow::Result<()>;
+
+    /// Disable an active alert.
+    async fn disable_active_alert(&self, user_id: &str, device_id: &str, rule_id: &str) -> anyhow::Result<()>;
 }
 
 #[async_trait]

@@ -426,6 +426,45 @@ You can also push new rules dynamically via MQTT.
 
 ---
 
+
+---
+
+## 🔔 Stateful Alerts & Management
+
+The system implements **Stateful Alerting** to prevent notification fatigue and allowing user control.
+
+### 1. Behavior
+*   **Deduplication**: If a rule is violated multiple times (e.g., Temperature > 80 for 10 consecutive minutes), only **one** alert is created. Subsequent violations update the `last_seen` timestamp of the `active_alerts` record.
+*   **Auto-Recovery**: When data returns to normal (e.g., Temperature drops to 20), the alert is automatically **Resolved** (removed from `active_alerts`) and a `RESOLVED` notification is published.
+
+### 2. Management (MQTT)
+Users can control active alerts by publishing to the management topic.
+
+**Topic:** `users/{user_id}/alerts/manage`
+
+#### **Snooze an Alert**
+Temporarily suppress an alert for a specific duration. If the condition persists after the duration, the alert re-triggers.
+```json
+{
+  "device_id": "dev1",
+  "rule_id": "temperature",
+  "action": "SNOOZE",
+  "duration_minutes": 30
+}
+```
+
+#### **Disable an Alert**
+Permanently suppress an alert until re-enabled (manual DB intervention required).
+```json
+{
+  "device_id": "dev1",
+  "rule_id": "temperature",
+  "action": "DISABLE"
+}
+```
+
+---
+
 ## ☸️ Running Locally (Kubernetes)
 
 For a more production-like environment, you can run the stack on a local Kubernetes cluster (Docker Desktop, Minikube, kind).

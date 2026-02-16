@@ -44,18 +44,37 @@ pub struct Alert {
     pub alert_type: String, // e.g., "CriticalTemp", "LowBattery"
     pub message: String,
     pub value: Option<f64>,
+    pub rule_id: String, // New: Link to config rule
+    pub status: String,  // New: Triggered, Resolved, Snoozed, Disabled
 }
 
 impl Alert {
-    pub fn new(device_id: String, user_id: String, alert_type: String, message: String, value: Option<f64>) -> Self {
+    pub fn new(device_id: String, user_id: String, rule_id: String, alert_type: String, message: String, value: Option<f64>, status: String) -> Self {
         Self {
             id: None,
             created_at: OffsetDateTime::now_utc(),
             device_id,
             user_id,
+            rule_id,
             alert_type,
             message,
             value,
+            status,
         }
     }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ActiveAlert {
+    pub user_id: String,
+    pub device_id: String,
+    pub rule_id: String,
+    #[serde(with = "time::serde::iso8601")]
+    pub start_time: OffsetDateTime,
+    #[serde(with = "time::serde::iso8601")]
+    pub last_seen: OffsetDateTime,
+    pub status: String, // Active, Snoozed, Disabled
+    #[serde(with = "time::serde::iso8601::option")]
+    pub snooze_until: Option<OffsetDateTime>,
+    pub current_value: Option<f64>,
 }
