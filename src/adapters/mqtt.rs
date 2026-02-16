@@ -28,7 +28,7 @@ impl MqttAdapter {
         mqttoptions.set_keep_alive(Duration::from_secs(30));
         
         // Reliability settings for QoS 1
-        mqttoptions.set_clean_session(false); // Persistent Session: Broker queues msgs while we restart
+        mqttoptions.set_clean_session(true); // Changed from false to resolve persistent session conflicts in dev
         mqttoptions.set_manual_acks(true); // Disable Auto-Ack as requested
 
         // Increase Inflight window to match Batch Size (1000)

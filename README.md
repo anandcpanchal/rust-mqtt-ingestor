@@ -423,3 +423,55 @@ You can also push new rules dynamically via MQTT.
   ]
 }
 ```
+
+---
+
+## ☸️ Running Locally (Kubernetes)
+
+For a more production-like environment, you can run the stack on a local Kubernetes cluster (Docker Desktop, Minikube, kind).
+
+**Prerequisites:**
+-   Docker Desktop (with Kubernetes enabled)
+-   `helm`
+-   `kubectl`
+
+**Steps:**
+
+1.  **Deployment**:
+    Run the all-in-one setup script. This installs Redpanda, EMQX, TimescaleDB, Prometheus, Grafana, and the application.
+    ```bash
+    ./k8s/scripts/setup_local.sh
+    ```
+
+    *Note: The script handles building the docker image, installing Helm charts, and applying manifests.*
+
+2.  **Access Services**:
+    -   **Redpanda (Kafka)**: Exposed on NodePorts `9092` (via `31092` external).
+    -   **EMQX Dashboard**: [http://localhost:18083](http://localhost:18083) (admin/public)
+    -   **Grafana**: [http://localhost:30000](http://localhost:30000) (admin/admin)
+    -   **Prometheus**: Port-forward using `kubectl port-forward svc/prometheus-operated 9090:9090`.
+
+3.  **Teardown**:
+    To stop and remove all resources:
+    ```bash
+    ./k8s/scripts/teardown.sh
+    ```
+    *This removes the deployments and helm releases. Persistent Volumes (PVCs) are kept by default. To remove data, run `kubectl delete pvc --all`.*
+
+4.  **Load Testing**:
+    To run the load tester against the K8s cluster:
+    1.  **Port-Forward Database** (Required for user registration):
+        ```bash
+        kubectl port-forward svc/timescaledb 5432:5432
+        ```
+    2.  **Run Load Tester** (in another terminal):
+        ```bash
+        cargo run --bin load-tester -- \
+            --host localhost \
+            --port 1883 \
+            --users 10 \
+            --rate 50 \
+            --duration 30 \
+            --database-url postgres://postgres:password@localhost:5432/iot_db
+        ```
+

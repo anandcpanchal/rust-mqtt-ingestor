@@ -22,6 +22,7 @@ impl WorkerPool {
     pub async fn run(self, mut receiver: Receiver<RawIngestMessage>, batch_sender: Sender<IngestMessage>) {
         info!("WorkerPool starting with {} workers", self.concurrency);
         let semaphore = Arc::new(tokio::sync::Semaphore::new(self.concurrency));
+        let active_count = Arc::new(std::sync::atomic::AtomicUsize::new(0));
 
         while let Some(msg) = receiver.recv().await {
             let permit = match semaphore.clone().acquire_owned().await {
@@ -34,25 +35,14 @@ impl WorkerPool {
             
             let processor = self.processor.clone();
             let batch_sender = batch_sender.clone();
+            let active_count = active_count.clone();
 
             tokio::spawn(async move {
                 let _permit = permit; // Hold permit until task completion
                 
-                // Metrics: Active Workers Gauge (Inc)
-                metrics::gauge!("worker_active_count", 1.0, "type" => "active"); // Increment not supported directly in this macro form easily without handle, so using absolute or delta? 
-                // Wait, gauge! usually sets value. 
-                // For increment/decrement, we need a handle or use register.
-                // Reverting Gauge specific usage to .increment is usually correct for Gauge handles, but if macro fails...
-                // Let's try `gauge!("name").increment(1.0)` but ensuring strict syntax?
-                // Actually, the error `expected ,` might be due to `metrics` 0.21 wanting `gauge!("name", val)`
-                // To do inc/dec on gauge via macro: `metrics::gauge!("name").increment(1.0)` IS standard.
-                // The issue might be `metrics` crate version or features.
-                // Let's assume standard behavior: `gauge!` emits a value.
-                // If we want to track concurrency, we need a static handle or use `gauge!("name", value)`.
-                // But we don't know the absolute value here easily without shared state.
-                // FOR NOW: Let's use `histogram` for duration, and `counter` for errors.
-                // Gauges in stateless workers are hard without a central atomic.
-                // I will Comment out the Gauge for now to unblock build, or use a Counter for "Jobs Started" and "Jobs Finished".
+                // Track active workers
+                let current = active_count.fetch_add(1, std::sync::atomic::Ordering::SeqCst) + 1;
+                metrics::gauge!("worker_active_count", current as f64);
                 
                 // Metrics: Jobs Started
                 metrics::counter!("worker_jobs_started_total", 1);
@@ -67,22 +57,86 @@ impl WorkerPool {
                         };
                         if let Err(e) = batch_sender.send(ingest_msg).await {
                             error!("Failed to send to batch executor: {}", e);
-                            metrics::counter!("worker_errors_total", 1, "type" => "channel_closed".to_string());
+                            metrics::counter!("worker_errors_total", 1, "type" => "channel_closed");
                         }
                     },
                     Ok(None) => {}, // Filtered
                     Err(e) => {
                         error!("Processing error in WorkerPool: {:?}", e);
-                        metrics::counter!("worker_errors_total", 1, "type" => "processing_error".to_string());
+                        metrics::counter!("worker_errors_total", 1, "type" => "processing_error");
                     },
                 }
                 
                 // Metrics: Duration
                 let duration = start.elapsed().as_secs_f64();
                 metrics::histogram!("worker_processing_duration_seconds", duration);
-                // metrics::gauge!("worker_active_count").decrement(1.0);
+                
+                let remaining = active_count.fetch_sub(1, std::sync::atomic::Ordering::SeqCst) - 1;
+                metrics::gauge!("worker_active_count", remaining as f64);
             });
         }
         info!("WorkerPool shutting down");
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use async_trait::async_trait;
+    use crate::domain::Telemetry;
+    use crate::ports::{StorageRepository, MessageBroker};
+    use crate::state::config_manager::ConfigManager;
+    use sqlx::postgres::PgPoolOptions;
+    use std::time::Duration;
+    use tokio::time::sleep;
+
+    struct MockStorage;
+    #[async_trait]
+    impl StorageRepository for MockStorage {
+        async fn store_telemetry(&self, _data: &Telemetry) -> anyhow::Result<()> { Ok(()) }
+        async fn store_alert(&self, _alert: &crate::domain::Alert) -> anyhow::Result<()> { Ok(()) }
+        async fn store_telemetry_batch(&self, _batch: &[Telemetry]) -> anyhow::Result<()> { Ok(()) }
+    }
+
+    struct MockBroker;
+    #[async_trait]
+    impl MessageBroker for MockBroker {
+        async fn publish(&self, _topic: &str, _payload: Vec<u8>) -> anyhow::Result<()> { Ok(()) }
+    }
+
+    #[tokio::test]
+    async fn test_worker_pool_concurrency() {
+        let (raw_tx, raw_rx) = tokio::sync::mpsc::channel(10);
+        let (batch_tx, mut batch_rx) = tokio::sync::mpsc::channel(10);
+
+        let pool = PgPoolOptions::new().connect_lazy("postgres://localhost/db").unwrap();
+        let config_manager = Arc::new(ConfigManager::new(pool));
+        let storage = Arc::new(MockStorage);
+        let broker = Arc::new(MockBroker);
+        let processor = Arc::new(ServiceProcessor::new(storage, broker, config_manager));
+
+        let worker_pool = WorkerPool::new(processor, 2);
+        
+        tokio::spawn(async move {
+            worker_pool.run(raw_rx, batch_tx).await;
+        });
+
+        // Send 2 messages
+        let telemetry = r#"{"time":"2023-10-01T12:00:00Z","device_id":"dev1","sequence_id":1,"temperature":25.0,"battery":100}"#;
+        raw_tx.send(RawIngestMessage {
+            topic: "users/u1/devices/d1/telemetry".into(),
+            payload: telemetry.as_bytes().to_vec(),
+        }).await.unwrap();
+        
+        raw_tx.send(RawIngestMessage {
+            topic: "users/u1/devices/d2/telemetry".into(),
+            payload: telemetry.as_bytes().to_vec(),
+        }).await.unwrap();
+
+        // Should receive 2 processed messages in batch_rx
+        let _msg1 = tokio::time::timeout(Duration::from_secs(1), batch_rx.recv()).await.unwrap().unwrap();
+        let _msg2 = tokio::time::timeout(Duration::from_secs(1), batch_rx.recv()).await.unwrap().unwrap();
+        
+        assert_eq!(_msg1.telemetry.device_id, "dev1");
     }
 }

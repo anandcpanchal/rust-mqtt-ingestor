@@ -1,0 +1,30 @@
+# k8s/helm-values/timescaledb-values.yaml
+# Using timescaledb-single chart
+
+image:
+  repository: timescale/timescaledb
+  tag: latest-pg14
+  pullPolicy: IfNotPresent
+
+# Env variables (list format)
+env:
+  - name: POSTGRES_DB
+    value: iot_db
+  - name: POSTGRES_PASSWORD
+    value: password
+
+resources:
+  requests:
+    memory: "512Mi"
+    cpu: "250m"
+  limits:
+    memory: "1Gi"
+    cpu: "1"
+
+# Service customization if needed
+service:
+  primary:
+    type: ClusterIP
+
+# Persistence and Replication removed as they cause schema errors in this chart version.
+# Assuming defaults are sufficient for local dev.

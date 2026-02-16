@@ -25,6 +25,7 @@ impl KafkaAdapter {
             .set("session.timeout.ms", "6000")
             .set("enable.auto.commit", "true") 
             .set("auto.offset.reset", "latest")
+            .set("security.protocol", "plaintext")
             .create()
             .expect("Consumer creation failed");
 

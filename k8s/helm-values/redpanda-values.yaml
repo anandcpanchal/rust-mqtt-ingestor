@@ -1,0 +1,62 @@
+# k8s/helm-values/redpanda-values.yaml
+image:
+  repository: docker.redpanda.com/redpandadata/redpanda
+  tag: "v23.3.6"
+  # pullPolicy is typically under 'statefulset' or 'image' depending on chart version. 
+  # For redpanda chart, it's often implicit or under 'image.pullPolicy' if supported, 
+  # but checking docs, it might be separate. Let's remove if causing issues or move.
+  # Actually, redpanda chart 5.x Structure:
+  # image:
+  #   repository: ...
+  #   tag: ...
+  # statefulset:
+  #   imagePullPolicy: IfNotPresent
+
+statefulset:
+  replicas: 1
+  budget:
+    maxUnavailable: 0
+
+resources:
+  cpu:
+    cores: 1
+  memory:
+    container:
+      min: 1.5Gi
+      max: 1.5Gi
+
+storage:
+  persistentVolume:
+    enabled: true
+    storageClass: "hostpath"
+    size: 2Gi
+
+tls:
+  enabled: false
+
+listeners:
+  kafka:
+    port: 9092
+    external:
+      default:
+        advertisedPorts: [31092]
+  admin:
+    external:
+      default:
+        advertisedPorts: [31644]
+  schemaRegistry:
+    enabled: false
+  http:
+    enabled: true
+    external:
+      default:
+        advertisedPorts: [31082]
+
+# Tiered Storage often under 'storage.tieredConfig' or similar in newer charts. 
+# Removing top-level invalid key.
+# tieredStorage:
+#   enabled: false
+
+monitoring:
+  enabled: false
+

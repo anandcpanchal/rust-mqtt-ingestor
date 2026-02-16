@@ -1,0 +1,97 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: vector-config
+data:
+  vector.toml: |
+    [sources.emqx_source]
+    type = "mqtt"
+
+    host = "emqx.default.svc.cluster.local"
+    port = 1883
+    topic = "users/+/devices/+/telemetry"
+    
+    user = "${MQTT_USERNAME}"
+    password = "${MQTT_PASSWORD}"
+
+    [transforms.parse_json]
+    type = "remap"
+    inputs = ["emqx_source"]
+    source = '''
+    payload = parse_json!(.message)
+    . = { "topic": .topic, "payload": payload }
+    '''
+
+    [sinks.kafka_sink]
+    type = "kafka"
+    inputs = ["parse_json"]
+    bootstrap_servers = "redpanda:9092"
+    topic = "iot-stream"
+    encoding.codec = "json"
+    sasl.enabled = false
+    tls.enabled = false
+
+    [sources.internal_metrics]
+    type = "internal_metrics"
+
+    [sinks.prometheus_sink]
+    type = "prometheus_exporter"
+    inputs = ["internal_metrics"]
+    address = "0.0.0.0:9090"
+
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: vector
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: vector
+  template:
+    metadata:
+      labels:
+        app: vector
+    spec:
+      containers:
+      - name: vector
+        image: timberio/vector:nightly-debian
+        args: ["--config", "/etc/vector/vector.toml"]
+        env:
+        - name: MQTT_USERNAME
+          valueFrom:
+            secretKeyRef:
+              name: backend-secrets
+              key: mqtt-username
+        - name: MQTT_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: backend-secrets
+              key: mqtt-password
+        ports:
+        - containerPort: 9090
+          name: metrics
+        volumeMounts:
+        - name: config
+          mountPath: /etc/vector
+          readOnly: true
+      volumes:
+      - name: config
+        configMap:
+          name: vector-config
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: vector
+  labels:
+    app: vector
+spec:
+  selector:
+    app: vector
+  ports:
+  - port: 9090
+    targetPort: 9090
+    name: metrics
+  type: ClusterIP
