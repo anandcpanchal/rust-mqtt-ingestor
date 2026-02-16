@@ -1,0 +1,32 @@
+# k8s/helm-values/monitoring-values.yaml
+prometheus:
+  prometheusSpec:
+    serviceMonitorSelectorNilUsesHelmValues: false
+    serviceMonitorSelector: {}
+    serviceMonitorNamespaceSelector: {}
+
+grafana:
+  adminPassword: "admin"
+  service:
+    type: NodePort
+    nodePort: 30000 # Easy access on localhost:30000
+  
+  # Auto-import dashboards
+  dashboardProviders:
+    dashboardproviders.yaml:
+      apiVersion: 1
+      providers:
+      - name: 'default'
+        orgId: 1
+        folder: ''
+        type: file
+        disableDeletion: false
+        editable: true
+        options:
+          path: /var/lib/grafana/dashboards/default
+
+  dashboards:
+    default:
+      backend-overview:
+        url: https://raw.githubusercontent.com/user/repo/main/grafana/dashboards/backend_overview.json
+        # NOTE: In real deployment, we mount the JSON file from a ConfigMap

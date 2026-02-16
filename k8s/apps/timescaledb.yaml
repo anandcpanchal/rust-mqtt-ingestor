@@ -1,0 +1,67 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: timescaledb
+  labels:
+    app: timescaledb
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: timescaledb
+  template:
+    metadata:
+      labels:
+        app: timescaledb
+    spec:
+      containers:
+      - name: timescaledb
+        image: timescale/timescaledb:latest-pg14
+        ports:
+        - containerPort: 5432
+        env:
+        - name: POSTGRES_DB
+          value: "iot_db"
+        - name: POSTGRES_PASSWORD
+          value: "password"
+        - name: POSTGRES_USER
+          value: "postgres"
+        # Optional: Tuning config if needed, but defaults are usually fine for dev
+        # args: ["-c", "max_connections=100"] 
+        volumeMounts:
+        - name: data
+          mountPath: /var/lib/postgresql/data
+        resources:
+          requests:
+            memory: "512Mi"
+            cpu: "250m"
+          limits:
+            memory: "1Gi"
+            cpu: "1"
+      volumes:
+      - name: data
+        persistentVolumeClaim:
+          claimName: timescaledb-pvc
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: timescaledb
+spec:
+  selector:
+    app: timescaledb
+  ports:
+  - port: 5432
+    targetPort: 5432
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: timescaledb-pvc
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 1Gi
+  storageClassName: hostpath

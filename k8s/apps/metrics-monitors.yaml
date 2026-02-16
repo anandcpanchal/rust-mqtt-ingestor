@@ -1,0 +1,45 @@
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: backend-monitor
+  labels:
+    release: prometheus
+spec:
+  selector:
+    matchLabels:
+      app: backend
+  endpoints:
+  - port: metrics
+    interval: 10s
+---
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: vector-monitor
+  labels:
+    release: prometheus
+spec:
+  selector:
+    matchLabels:
+      app: vector
+  endpoints:
+  - port: metrics
+    interval: 10s
+---
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: redpanda-monitor
+  labels:
+    release: prometheus
+spec:
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: redpanda
+  endpoints:
+  - port: admin
+    path: /metrics
+    interval: 10s
+  - port: admin
+    path: /public_metrics
+    interval: 10s

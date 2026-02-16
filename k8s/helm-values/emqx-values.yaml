@@ -1,0 +1,26 @@
+# k8s/helm-values/emqx-values.yaml
+image:
+  repository: emqx/emqx
+  tag: "5.3.2"
+
+replicaCount: 1 # Scale down for dev
+
+resources:
+  limits:
+    cpu: 500m
+    memory: 512Mi
+  requests:
+    cpu: 100m
+    memory: 128Mi
+
+service:
+  type: LoadBalancer # Expose MQTT ports
+  ports:
+    mqtt: 1883
+    mqttssl: 8883
+    ws: 8083
+    dashboard: 18083
+
+emqxConfig:
+  EMQX_ALLOW_ANONYMOUS: "true" # For dev convenience
+  EMQX_LOADED_PLUGINS: "emqx_recon,emqx_retainer,emqx_management,emqx_dashboard"
