@@ -1,8 +1,8 @@
-use crate::domain::{Telemetry, Alert};
+use crate::domain::{Telemetry, Alert, ActiveAlert};
 use crate::ports::{StorageRepository, MessageBroker};
 use crate::state::config_manager::{ConfigManager, UserConfig};
 use std::sync::Arc;
-use tracing::{info, error, instrument};
+use tracing::{info, warn, error, instrument};
 use rumqttc::{Event, Packet, AsyncClient};
 use std::time::Duration;
 
@@ -53,7 +53,7 @@ impl ServiceProcessor {
         if let Some(uid_str) = uid {
             let config = self.config_manager.get_config(uid_str);
 
-            // 2. Dynamic Rules Engine
+            // 2. Dynamic Rules Engine (Stateful)
             for rule in &config.rules {
                 if let Some(val) = telemetry.get_value(&rule.key) {
                     let triggered = match rule.operator.as_str() {
@@ -66,24 +66,39 @@ impl ServiceProcessor {
                     };
 
                     if triggered {
-                        let alert = Alert::new(
-                            telemetry.device_id.clone(),
-                            uid_str.to_string(), // Pass user_id
-                            format!("Rule:{}", rule.key), // Alert Type
-                            rule.message.clone(),
-                            Some(val),
-                        );
-                        
-                        self.storage.store_alert(&alert).await?;
-                        
-                        let alert_topic = format!("users/{}/alerts", uid_str);
-                        self.broker.publish(&alert_topic, serde_json::to_vec(&alert)?).await?;
-                        info!("Dynamic Alert ({}) published to {}", rule.key, alert_topic);
-                        
-                        // Metrics: Alerts Triggered
-                        let r_key = rule.key.clone();
-                        let u_id = uid_str.to_string();
-                        metrics::counter!("alerts_triggered_total", 1, "rule" => r_key, "user_id" => u_id);
+                        let active_alert = ActiveAlert {
+                            user_id: uid_str.to_string(),
+                            device_id: telemetry.device_id.clone(),
+                            rule_id: rule.key.clone(),
+                            start_time: telemetry.time,
+                            last_seen: telemetry.time,
+                            status: "Active".to_string(),
+                            snooze_until: None,
+                            current_value: Some(val),
+                        };
+
+                        // call upsert (Deduplication)
+                        if let Some(alert) = self.storage.upsert_active_alert(&active_alert, &rule.message).await? {
+                            // If returned generic Alert -> Publish & Store History
+                            self.storage.store_alert(&alert).await?;
+                            
+                            let alert_topic = format!("users/{}/alerts", uid_str);
+                            self.broker.publish(&alert_topic, serde_json::to_vec(&alert)?).await?;
+                            info!("Alert TRIGGERED ({}) -> {}", rule.key, alert_topic);
+                            
+                            metrics::counter!("alerts_triggered_total", 1, "rule" => rule.key.clone(), "user_id" => uid_str.to_string());
+                        } else {
+                            // Logic handled, but no new publication needed (e.g. heartbeat update or snoozed)
+                        }
+                    } else {
+                        // Not triggered -> Check if we need to RESOLVE
+                        // Auto-Recovery Logic
+                        if let Some(resolved_alert) = self.storage.resolve_active_alert(uid_str, &telemetry.device_id, &rule.key).await? {
+                            self.storage.store_alert(&resolved_alert).await?;
+                            let alert_topic = format!("users/{}/alerts", uid_str);
+                            self.broker.publish(&alert_topic, serde_json::to_vec(&resolved_alert)?).await?;
+                            info!("Alert RESOLVED ({}) -> {}", rule.key, alert_topic);
+                        }
                     }
                 }
             }
@@ -107,6 +122,41 @@ impl ServiceProcessor {
         }
         Ok(())
     }
+
+    pub async fn process_alert_management(&self, topic: &str, payload: &[u8]) -> anyhow::Result<()> {
+        let parts: Vec<&str> = topic.split('/').collect();
+        // Topic: users/{user_id}/alerts/manage
+        let uid = if parts.len() >= 4 && parts[0] == "users" && parts[2] == "alerts" && parts[3] == "manage" {
+            Some(parts[1])
+        } else {
+            None
+        };
+
+        if let Some(user_id) = uid {
+            let req: AlertManagementRequest = serde_json::from_slice(payload)?;
+            match req.action.as_str() {
+                "SNOOZE" => {
+                    let duration = req.duration_minutes.unwrap_or(30);
+                    self.storage.snooze_active_alert(user_id, &req.device_id, &req.rule_id, duration).await?;
+                    info!("Alert SNOOZED for user {} device {} rule {}", user_id, req.device_id, req.rule_id);
+                },
+                "DISABLE" => {
+                    self.storage.disable_active_alert(user_id, &req.device_id, &req.rule_id).await?;
+                    info!("Alert DISABLED for user {} device {} rule {}", user_id, req.device_id, req.rule_id);
+                },
+                _ => warn!("Unknown alert action: {}", req.action),
+            }
+        }
+        Ok(())
+    }
+}
+
+#[derive(serde::Deserialize)]
+struct AlertManagementRequest {
+    device_id: String,
+    rule_id: String,
+    action: String, // SNOOZE, DISABLE
+    duration_minutes: Option<i64>,
 }
 
 // Message type for Channel
@@ -123,9 +173,10 @@ pub async fn run_mqtt_maintenance_loop(
     processor: Arc<ServiceProcessor>,
 ) -> anyhow::Result<()> {
     
-    // Ensure subscriptions for CONFIG only
+    // Ensure subscriptions for CONFIG and ALERTS management
     client.subscribe("users/+/config", rumqttc::QoS::AtLeastOnce).await?;
-    info!("MQTT Maintenance Loop Started. Subscribed to Configs. Telemetry handled via Kafka.");
+    client.subscribe("users/+/alerts/manage", rumqttc::QoS::AtLeastOnce).await?;
+    info!("MQTT Maintenance Loop Started. Subscribed to Configs & Alert Mgmt. Telemetry handled via Kafka.");
 
     loop {
         match eventloop.poll().await {
@@ -139,12 +190,17 @@ pub async fn run_mqtt_maintenance_loop(
                                 if let Err(e) = processor.process_config_update(&topic, &payload).await {
                                     error!("Config processing failed: {:?}", e);
                                 }
+                        } else if topic.ends_with("/alerts/manage") {
+                                if let Err(e) = processor.process_alert_management(&topic, &payload).await {
+                                    error!("Alert management processing failed: {:?}", e);
+                                }
                         }
-                        // Ignore other topics (telemetry shouldn't be here)
+                        // Ignore other topics
                     }
                     Event::Incoming(Packet::ConnAck(_)) => {
-                        info!("MQTT Connected! Resubscribing to Configs...");
+                        info!("MQTT Connected! Resubscribing to Configs & Alerts...");
                         client.subscribe("users/+/config", rumqttc::QoS::AtLeastOnce).await?;
+                        client.subscribe("users/+/alerts/manage", rumqttc::QoS::AtLeastOnce).await?;
                     }
                     _ => {}
                 }
@@ -275,6 +331,24 @@ mod tests {
             Ok(())
         }
         async fn store_telemetry_batch(&self, _batch: &[Telemetry]) -> anyhow::Result<()> { Ok(()) }
+        
+        async fn upsert_active_alert(&self, alert: &ActiveAlert, message: &str) -> anyhow::Result<Option<Alert>> {
+            // Mock deduplication: Always return new Alert for test simplicity
+            // or implement basic logic? 
+            // For now, let's behave like "always new" to pass existing test logic
+            Ok(Some(Alert::new(
+                alert.device_id.clone(),
+                alert.user_id.clone(),
+                alert.rule_id.clone(),
+                format!("Rule:{}", alert.rule_id),
+                message.to_string(),
+                alert.current_value,
+                "Triggered".to_string()
+            )))
+        }
+        async fn resolve_active_alert(&self, _user_id: &str, _device_id: &str, _rule_id: &str) -> anyhow::Result<Option<Alert>> { Ok(None) }
+        async fn snooze_active_alert(&self, _user_id: &str, _device_id: &str, _rule_id: &str, _duration: i64) -> anyhow::Result<()> { Ok(()) }
+        async fn disable_active_alert(&self, _user_id: &str, _device_id: &str, _rule_id: &str) -> anyhow::Result<()> { Ok(()) }
     }
 
     struct MockBroker {
