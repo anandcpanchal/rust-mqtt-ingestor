@@ -33,8 +33,16 @@ pub trait MessageBroker: Send + Sync {
     /// QoS 1 implied.
     async fn publish(&self, topic: &str, payload: Vec<u8>) -> anyhow::Result<()>;
     
+// ...
     // Note: Subscribe is typically handled by the event loop stream, 
     // but we could abstract it here if we wanted a push-based model. 
     // For this POC, the loop controls the subscriber stream directly via rumqttc, 
     // so we mainly abstract the "Output" side here to decouple processing from the specific client.
+}
+
+#[async_trait]
+pub trait DlqRepository: Send + Sync {
+    /// Send a failed message to the Dead Letter Queue.
+    /// Includes metadata about why it failed.
+    async fn send_to_dlq(&self, original_topic: String, payload: Vec<u8>, error_msg: String) -> anyhow::Result<()>;
 }
