@@ -76,9 +76,10 @@ CREATE TABLE raw_telemetry (
 
 ## 🛡️ Reliability & Zero Data Loss
 1.  **Durable Buffer**: Redpanda stores all incoming telemetry on disk before processing.
-2.  **Dead Letter Queue (DLQ)**: Ensures faulty data is not silenty dropped but stored for debugging.
-3.  **Backpressure**: The Rust backend consumes at its own pace (Pull Model) rather than being overwhelmed by Pushes.
-4.  **Graceful Shutdown**: Finish processing current batch before exit.
+2.  **Dead Letter Queue (DLQ)**: Ensures faulty data is not silently dropped but stored for debugging.
+3.  **Circuit Breaker**: Protects the backend from database failures and prevents cascading errors.
+4.  **Backpressure**: The Rust backend consumes at its own pace (Pull Model) rather than being overwhelmed by Pushes.
+5.  **Graceful Shutdown**: Finish processing current batch before exit.
 
 ---
 
@@ -495,6 +496,28 @@ To replay, you can decode the `payload_base64` and republish to the `original_to
 
 ---
 
+
+## ⚡ Database Circuit Breaker
+
+To prevent cascading failures and provide resilience against database outages or high latency, the system implements the **Circuit Breaker** pattern for all database storage operations.
+
+### 1. Behavior
+- **Library**: Powered by `failsafe` with full asynchronous support.
+- **Fail-Open Policy**: If the database fails consecutively **5 times**, the circuit breaker opens.
+- **Backoff & Retry**: Uses an **Exponential Backoff** strategy (starting at 5s, doubling up to 60s) to allow the database time to recover before attempting a retry.
+- **Rejection**: While the circuit is **OPEN**, all database requests are rejected immediately without attempting a network call, preventing resource exhaustion in the backend.
+
+### 2. Observability & Metrics
+The circuit breaker is fully instrumented to provide real-time visibility into database health:
+
+- **Logging**: Automatically logs state transitions (`OPENED`, `HALF-OPEN`, `CLOSED`).
+- **Metrics**:
+    - `db_circuit_breaker_rejected_total`: Counter for calls rejected while the circuit is open.
+    - `db_circuit_breaker_state`: Gauge indicating the current state (1.0 = Open, 0.5 = Half-Open, 0.0 = Closed).
+
+These metrics are accessible via the Prometheus endpoint and visualized in Grafana.
+
+---
 
 ## ☸️ Running Locally (Kubernetes)
 
