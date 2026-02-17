@@ -31,6 +31,8 @@ spec:
         volumeMounts:
         - name: data
           mountPath: /var/lib/postgresql/data
+        - name: init-scripts
+          mountPath: /docker-entrypoint-initdb.d
         resources:
           requests:
             memory: "512Mi"
@@ -42,6 +44,9 @@ spec:
       - name: data
         persistentVolumeClaim:
           claimName: timescaledb-pvc
+      - name: init-scripts
+        configMap:
+          name: db-init
 ---
 apiVersion: v1
 kind: Service

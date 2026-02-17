@@ -544,7 +544,17 @@ For a more production-like environment, you can run the stack on a local Kuberne
     -   **Grafana**: [http://localhost:30000](http://localhost:30000) (admin/admin)
     -   **Prometheus**: Port-forward using `kubectl port-forward svc/prometheus-operated 9090:9090`.
 
-3.  **Teardown**:
+3.  **Reloading Changes**:
+    If you make changes to the Rust code, you can reload the running cluster without a full restart:
+    ```bash
+    # 1. Rebuild image
+    docker build -t ghcr.io/anandpanchal/poc-mqtt-backend:local .
+    
+    # 2. Restart deployment
+    kubectl rollout restart deployment backend
+    ```
+
+4.  **Teardown**:
     To stop and remove all resources:
     ```bash
     ./k8s/scripts/teardown.sh

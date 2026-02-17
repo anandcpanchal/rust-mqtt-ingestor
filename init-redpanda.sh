@@ -9,10 +9,9 @@ until rpk cluster info -X brokers=redpanda:9092; do
   sleep 2
 done
 
-echo "Cluster is reachable. Creating topic 'iot-stream'..."
-# Create topic
-# If it exists, rpk might return an error, so we allow it to 'fail' verbally but we exit 0
+echo "Cluster is reachable. Creating topics..."
 rpk topic create iot-stream -X brokers=redpanda:9092 -p 1 -r 1 || true
+rpk topic create iot-stream-dlq -X brokers=redpanda:9092 -p 1 -r 1 || true
 
 echo "Topic creation step done. Exiting."
 exit 0

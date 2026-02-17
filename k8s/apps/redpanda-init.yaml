@@ -1,0 +1,23 @@
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: redpanda-init
+spec:
+  template:
+    spec:
+      containers:
+      - name: redpanda-init
+        image: docker.redpanda.com/redpandadata/redpanda:v23.3.6
+        command:
+        - /bin/sh
+        - -c
+        - |
+          echo "Waiting for Redpanda..."
+          until rpk cluster info -X brokers=redpanda:9092; do
+            sleep 2
+          done
+          echo "Creating topics..."
+          rpk topic create iot-stream -X brokers=redpanda:9092 || true
+          rpk topic create iot-stream-dlq -X brokers=redpanda:9092 || true
+      restartPolicy: OnFailure
+  backoffLimit: 4

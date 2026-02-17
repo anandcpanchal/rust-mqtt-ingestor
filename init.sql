@@ -93,6 +93,16 @@ INSERT INTO mqtt_users (username, password_hash, is_superuser) VALUES ('backend_
 -- INSERT INTO mqtt_users (username, password_hash, is_superuser) VALUES ('admin', 'admin_hash', TRUE);
 
 -- Seed Default ACLs
--- Allow backend_service to subscribe to all telemetry
+-- 1. Allow backend_service to subscribe to all telemetry and publish/subscribe to management topics
 INSERT INTO mqtt_acl (username, permission, topic, action) VALUES ('backend_service', 'subscribe', 'users/+/devices/+/telemetry', 'allow');
+INSERT INTO mqtt_acl (username, permission, topic, action) VALUES ('backend_service', 'all', 'users/+/config', 'allow');
+INSERT INTO mqtt_acl (username, permission, topic, action) VALUES ('backend_service', 'all', 'users/+/alerts/manage', 'allow');
+
+-- 2. Allow load_tester (superuser) to publish everything
+INSERT INTO mqtt_acl (username, permission, topic, action) VALUES ('load_tester', 'all', 'users/#', 'allow');
+
+-- 3. Allow generic users to publish their own telemetry and subscribe to their own config
+INSERT INTO mqtt_acl (username, permission, topic, action) VALUES ('user_1', 'publish', 'users/user_1/devices/+/telemetry', 'allow');
+INSERT INTO mqtt_acl (username, permission, topic, action) VALUES ('user_1', 'subscribe', 'users/user_1/config', 'allow');
+INSERT INTO mqtt_acl (username, permission, topic, action) VALUES ('user_1', 'subscribe', 'users/user_1/alerts/manage', 'allow');
 

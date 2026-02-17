@@ -17,7 +17,11 @@ helm repo add prometheus-community https://prometheus-community.github.io/helm-c
 helm repo add grafana https://grafana.github.io/helm-charts
 helm repo update
 
-# 3. Install Infrastructure (Helm)
+# 3. Create DB Init ConfigMap
+echo "💾 Creating Database Initialization ConfigMap..."
+kubectl create configmap db-init --from-file=init.sql -o yaml --dry-run=client | kubectl apply -f -
+
+# 4. Install Infrastructure (Helm)
 echo "🏗️ Deploying Infrastructure..."
 
 echo "   - Cert Manager (Required for Redpanda)"
@@ -42,6 +46,11 @@ echo "   - Redpanda"
 helm upgrade --install redpanda redpanda/redpanda \
   --values k8s/helm-values/redpanda-values.yaml --wait
 
+echo "   - Redpanda Topic Initialization"
+kubectl delete job redpanda-init --ignore-not-found
+kubectl apply -f k8s/apps/redpanda-init.yaml
+kubectl wait --for=condition=complete job/redpanda-init --timeout=120s
+
 echo "   - EMQX"
 helm upgrade --install emqx emqx/emqx \
   --values k8s/helm-values/emqx-values.yaml --wait
@@ -52,13 +61,13 @@ echo "   - TimescaleDB (Using Custom Manifest)"
 kubectl apply -f k8s/apps/timescaledb.yaml
  kubectl wait --for=condition=ready pod -l app=timescaledb --timeout=120s
 
-# 4. Apply Secrets & Apps
+# 5. Apply Secrets & Apps
 echo "🚀 Deploying Applications..."
 kubectl apply -f k8s/apps/dashboard.yaml
 kubectl apply -f k8s/apps/metrics-monitors.yaml
+kubectl apply -f k8s/apps/secrets.yaml
 kubectl apply -f k8s/apps/vector.yaml
 kubectl apply -f k8s/apps/backend.yaml
-kubectl apply -f k8s/apps/vector.yaml
 
 echo "✅ Deployment Complete!"
 echo "   - EMQX Dashboard: http://localhost:18083 (admin/public)"
