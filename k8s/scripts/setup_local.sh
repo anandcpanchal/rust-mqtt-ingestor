@@ -61,11 +61,11 @@ echo "   - TimescaleDB (Using Custom Manifest)"
 kubectl apply -f k8s/apps/timescaledb.yaml
  kubectl wait --for=condition=ready pod -l app=timescaledb --timeout=120s
 
-# 5. Apply Secrets & Apps
-echo "🚀 Deploying Applications..."
-kubectl apply -f k8s/apps/dashboard.yaml
-kubectl apply -f k8s/apps/metrics-monitors.yaml
+# 5.# Apply Applications
+echo "Applying application manifests..."
+kubectl apply -f k8s/apps/tempo.yaml
 kubectl apply -f k8s/apps/secrets.yaml
+kubectl apply -f k8s/apps/timescaledb.yaml
 kubectl apply -f k8s/apps/vector.yaml
 kubectl apply -f k8s/apps/backend.yaml
 

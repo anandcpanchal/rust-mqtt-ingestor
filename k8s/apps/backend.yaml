@@ -48,6 +48,8 @@ spec:
               key: mqtt-password
         - name: KAFKA_BROKERS
           value: "plaintext://redpanda:9092"
+        - name: OTEL_EXPORTER_OTLP_ENDPOINT
+          value: "http://tempo:4318/v1/traces"
         resources:
           limits:
             cpu: "500m"

@@ -1,4 +1,4 @@
-use crate::domain::{Telemetry, Alert, ActiveAlert};
+use crate::domain::{Telemetry, ActiveAlert};
 use crate::ports::{StorageRepository, MessageBroker};
 use crate::state::config_manager::{ConfigManager, UserConfig};
 use std::sync::Arc;
@@ -163,6 +163,7 @@ struct AlertManagementRequest {
 pub struct IngestMessage {
     pub telemetry: Telemetry,
     pub packet: Option<rumqttc::Publish>, // To Ack later
+    pub otel_context: std::collections::HashMap<String, String>,
 }
 
 /// 1. MQTT MAINTENANCE LOOP (Config & Alerts Support)

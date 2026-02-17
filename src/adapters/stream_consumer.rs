@@ -1,9 +1,12 @@
 use rdkafka::config::ClientConfig;
 use rdkafka::consumer::{StreamConsumer, Consumer};
 use rdkafka::message::Message;
-use tracing::{info, error, warn, instrument};
+use tracing::{info, error, warn, instrument, Span};
 use crate::service::worker_pool::RawIngestMessage;
 use tokio::sync::mpsc::Sender;
+use crate::telemetry::KafkaHeaderExtractor;
+use tracing_opentelemetry::OpenTelemetrySpanExt;
+use std::collections::HashMap;
 
 pub struct KafkaAdapter {
     consumer: StreamConsumer,
@@ -35,7 +38,7 @@ impl KafkaAdapter {
         }
     }
 
-    #[instrument(skip(self, sender, shutdown_signal), fields(topic = %self.topic))]
+    #[instrument(skip(self, sender, shutdown_signal), fields(topic = %self.topic, trace_id))]
     pub async fn run_loop(
         &self,
         sender: Sender<RawIngestMessage>,
@@ -58,6 +61,23 @@ impl KafkaAdapter {
                     match res {
                         Err(e) => error!("Kafka error: {}", e),
                         Ok(m) => {
+                            // Extract tracing context from headers
+                            let mut otel_context_map = HashMap::new();
+                            if let Some(headers) = m.headers() {
+                                let extractor = KafkaHeaderExtractor(headers);
+                                let context = opentelemetry::global::get_text_map_propagator(|propagator| {
+                                    propagator.extract(&extractor)
+                                });
+                                
+                                // Set the parent context for the current span
+                                Span::current().set_parent(context.clone());
+                                
+                                // Inject into our internal map for propagation
+                                opentelemetry::global::get_text_map_propagator(|propagator| {
+                                    propagator.inject_context(&context, &mut otel_context_map);
+                                });
+                            }
+
                             if let Some(payload_bytes) = m.payload() {
                                 // 1. Determine Input Format
                                 let (original_topic, original_payload) = match serde_json::from_slice::<EmqxBridgeMessage>(payload_bytes) {
@@ -78,6 +98,7 @@ impl KafkaAdapter {
                                 let msg = RawIngestMessage {
                                     topic: original_topic,
                                     payload: original_payload,
+                                    otel_context: otel_context_map,
                                 };
                                 
                                 // Metrics

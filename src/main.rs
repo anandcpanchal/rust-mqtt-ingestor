@@ -4,11 +4,13 @@ mod ports;
 mod adapters;
 mod service;
 mod state; 
+mod telemetry;
 
 use crate::config::AppConfig;
 use crate::service::processor::{ServiceProcessor, run_mqtt_maintenance_loop, run_batch_executor};
 use crate::adapters::{TimescaleRepository, MqttAdapter, KafkaAdapter};
 use crate::state::config_manager::ConfigManager;
+use crate::telemetry::{init_telemetry, shutdown_telemetry};
 use sqlx::postgres::PgPoolOptions;
 use std::sync::Arc;
 use tracing::{info, error, warn};
@@ -18,10 +20,11 @@ async fn main() -> anyhow::Result<()> {
     // 0. Load Env Vars First
     dotenvy::dotenv().ok();
 
-    // 1. Initialize Structured Logging
-    tracing_subscriber::fmt()
-        .with_env_filter(tracing_subscriber::EnvFilter::from_default_env())
-        .init();
+    // 1. Initialize Structured Logging & Tracing
+    let otel_endpoint = std::env::var("OTEL_EXPORTER_OTLP_ENDPOINT")
+        .unwrap_or_else(|_| "http://tempo:4318".to_string());
+    
+    init_telemetry("iot-backend", &otel_endpoint)?;
 
     info!("Starting IoT Rust Backend (Kafka Consumer Mode)...");
 

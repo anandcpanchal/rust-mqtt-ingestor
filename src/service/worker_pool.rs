@@ -1,13 +1,14 @@
 use std::sync::Arc;
 use tokio::sync::mpsc::{Receiver, Sender};
-use tracing::log::{info, error};
+use tracing::{info, error};
 use crate::service::processor::{ServiceProcessor, IngestMessage};
-use async_trait::async_trait;
+use tracing_opentelemetry::OpenTelemetrySpanExt;
 
 #[derive(Debug)]
 pub struct RawIngestMessage {
     pub topic: String,
     pub payload: Vec<u8>,
+    pub otel_context: std::collections::HashMap<String, String>,
 }
 
     pub struct WorkerPool {
@@ -27,6 +28,11 @@ impl WorkerPool {
         let active_count = Arc::new(std::sync::atomic::AtomicUsize::new(0));
 
         while let Some(msg) = receiver.recv().await {
+            // Extract parent span context from message
+            let parent_cx = opentelemetry::global::get_text_map_propagator(|propagator| {
+                propagator.extract(&msg.otel_context)
+            });
+
             let permit = match semaphore.clone().acquire_owned().await {
                 Ok(p) => p,
                 Err(_) => {
@@ -42,6 +48,10 @@ impl WorkerPool {
 
             tokio::spawn(async move {
                 let _permit = permit; // Hold permit until task completion
+
+                let span = tracing::info_span!("worker_process", topic = %msg.topic);
+                span.set_parent(parent_cx);
+                let _enter = span.enter();
                 
                 // Track active workers
                 let current = active_count.fetch_add(1, std::sync::atomic::Ordering::SeqCst) + 1;
@@ -57,6 +67,7 @@ impl WorkerPool {
                         let ingest_msg = IngestMessage {
                             telemetry,
                             packet: None,
+                            otel_context: msg.otel_context,
                         };
                         if let Err(e) = batch_sender.send(ingest_msg).await {
                             error!("Failed to send to batch executor: {}", e);
