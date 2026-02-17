@@ -18,6 +18,7 @@ graph TD
         WorkerPool -->|Process & Alert| AlertLogic["Alert Logic"]
         AlertLogic -->|"Pub (MQTT)"| EMQX
         WorkerPool -->|"Channel (Batch)"| Executor["Batch Executor"]
+        WorkerPool -->|Failures| DLQ[("DLQ (Redpanda)")]
     end
     
     Executor -->|"Batch Insert"| PgBouncer
@@ -27,7 +28,7 @@ graph TD
 ### Key Components
 1.  **Redpanda (Kafka)**:
     *   Acts as the persistent buffer/WAL (Write Ahead Log).
-    *   **Topic**: `iot-stream`.
+    *   **Topics**: `iot-stream` (Main), `iot-stream-dlq` (Dead Letter Queue).
     *   Ensures that even if the backend is down, messages are safely stored on disk.
     *   Decouples the high-concurrency "Fan-In" of MQTT from the linear processing of the backend.
 
@@ -40,6 +41,7 @@ graph TD
 3.  **Rust Backend**:
     *   **Kafka Consumer**: Fetches messages from Redpanda and pushes them to a local channel. Zero processing logic here to avoid blocking heartbeat.
     *   **Worker Pool**: A pool of concurrent workers (default: 4) that parse, validate, and process business logic (Alerts).
+    *   **Dead Letter Queue (DLQ)**: Failed messages (e.g., malformed JSON) are routed to a separate Kafka topic (`iot-stream-dlq`) for later inspection/replay.
     *   **Batch Executor**: Buffers processed telemetry up to 1,000 messages or 100ms before Bulk Insert.
     *   **Alerting**: Checks thresholds and publishes alerts back to EMQX.
 
@@ -74,8 +76,9 @@ CREATE TABLE raw_telemetry (
 
 ## 🛡️ Reliability & Zero Data Loss
 1.  **Durable Buffer**: Redpanda stores all incoming telemetry on disk before processing.
-2.  **Backpressure**: The Rust backend consumes at its own pace (Pull Model) rather than being overwhelmed by Pushes.
-3.  **Graceful Shutdown**: Finish processing current batch before exit.
+2.  **Dead Letter Queue (DLQ)**: Ensures faulty data is not silenty dropped but stored for debugging.
+3.  **Backpressure**: The Rust backend consumes at its own pace (Pull Model) rather than being overwhelmed by Pushes.
+4.  **Graceful Shutdown**: Finish processing current batch before exit.
 
 ---
 
