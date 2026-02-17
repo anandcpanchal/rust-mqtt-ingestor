@@ -79,7 +79,7 @@ async fn main() -> anyhow::Result<()> {
 
     // 7. Setup Pipeline Channels
     // Channel 1: Worker -> Batch Executor (IngestMessage)
-    let (tx, rx) = tokio::sync::mpsc::channel(10000);
+    let (batch_tx, batch_rx) = tokio::sync::mpsc::channel(10000);
     
     // Channel 2: Kafka -> Worker (RawIngestMessage)
     let (raw_tx, raw_rx) = tokio::sync::mpsc::channel(10000);
@@ -93,13 +93,17 @@ async fn main() -> anyhow::Result<()> {
     
     let executor_handle = tokio::spawn(async move {
         // Instrument Batch Executor task
-        run_batch_executor(rx, storage_for_executor, _client_for_executor).await;
+        run_batch_executor(batch_rx, storage_for_executor, _client_for_executor).await;
     });
 
-    // 8b. Worker Pool
-    let worker_pool = crate::service::worker_pool::WorkerPool::new(processor.clone(), 4);
+    // 5. Initialize DLQ Producer
+    let dlq_topic = std::env::var("DLQ_TOPIC").unwrap_or_else(|_| "iot-stream-dlq".to_string());
+    let dlq_producer = Arc::new(crate::adapters::dlq::KafkaDlqProducer::new(&config.kafka_brokers, &dlq_topic));
+
+    // 6. Start Worker Pool (Processing Logic)
+    let worker_pool = crate::service::worker_pool::WorkerPool::new(processor.clone(), dlq_producer, 4); // 4 concurrent workers
     let worker_handle = tokio::spawn(async move {
-        worker_pool.run(raw_rx, tx).await;
+        worker_pool.run(raw_rx, batch_tx).await;
     });
 
     // 8c. Kafka Ingest Loop (Producer to Worker Pool)

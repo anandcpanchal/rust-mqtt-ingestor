@@ -465,6 +465,34 @@ Permanently suppress an alert until re-enabled (manual DB intervention required)
 
 ---
 
+## 🛑 Dead Letter Queue (DLQ)
+
+To ensure **Zero Data Loss**, the system implements a Dead Letter Queue strategy.
+
+### 1. Behavior
+*   **Fault Tolerance**: If a message fails processing (citations: Malformed JSON, Database Error, Schema Mismatch), it is **NOT** dropped.
+*   **Routing**: The worker catches the error and publishes the failed message to a dedicated Kafka topic: `iot-stream-dlq`.
+*   **Metadata**: The original payload is wrapped in a JSON envelope with error details and timestamps.
+
+### 2. Message Format
+Messages in `iot-stream-dlq` follow this structure:
+
+```json
+{
+  "original_topic": "users/u1/devices/d1/telemetry",
+  "error": "Invalid JSON: Error(\"missing field `sequence_id`\", line: 1, column: 48)",
+  "timestamp": "2023-10-27T10:05:00Z",
+  "payload_base64": "eyJkZXZpY2VfaWQiOiJ..." // Original payload encoded in Base64
+}
+```
+
+### 3. Recovery
+Administrators can inspect these messages via Redpanda Console or CLI to diagnose issues.
+To replay, you can decode the `payload_base64` and republish to the `original_topic` after fixing the root cause (e.g., updating schema or fixing device firmware).
+
+---
+
+
 ## ☸️ Running Locally (Kubernetes)
 
 For a more production-like environment, you can run the stack on a local Kubernetes cluster (Docker Desktop, Minikube, kind).
