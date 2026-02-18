@@ -10,7 +10,8 @@ The system decouples **Ingestion** (MQTT) from **Processing** (Rust) using Redpa
 ```mermaid
 graph TD
     Devices["IoT Devices"] -->|MQTT Publish| EMQX["EMQX Broker"]
-    EMQX -->|"Bridge (Vector)"| Redpanda[("Redpanda (Kafka)")]
+    EMQX -->|"Bridge"| Vector["Vector"]
+    Vector -->|"Push (JSON)"| Redpanda[("Redpanda (Kafka)")]
     
     subgraph Backend ["Rust Backend Service"]
         Redpanda -->|Sub: iot-stream| Consumer["Kafka Consumer"]
@@ -25,7 +26,7 @@ graph TD
     PgBouncer -->|"Connection Pool"| TimescaleDB[("TimescaleDB")]
 
     %% Observability Connections
-    EMQX -.->|Entry| Redpanda
+    Vector -.->|Entry/Start Trace| Tempo
     subgraph Observability ["Observability Stack"]
         Tempo[("Grafana Tempo")]
         Prometheus[("Prometheus")]
