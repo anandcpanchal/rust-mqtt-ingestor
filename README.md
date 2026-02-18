@@ -12,7 +12,7 @@ graph TD
     Devices["IoT Devices"] -->|MQTT Publish| EMQX["EMQX Broker"]
     EMQX -->|"Bridge (Vector)"| Redpanda[("Redpanda (Kafka)")]
     
-    subgraph "Rust Backend Service"
+    subgraph Backend ["Rust Backend Service"]
         Redpanda -->|Sub: iot-stream| Consumer["Kafka Consumer"]
         Consumer -->|"Channel (Raw)"| WorkerPool["Worker Pool (x4)"]
         WorkerPool -->|Process & Alert| AlertLogic["Alert Logic"]
@@ -27,13 +27,13 @@ graph TD
     %% Observability Connections
     Devices -.->|OTel Trace| Tempo
     EMQX -.->|OTel Trace| Tempo
-    subgraph "Observability Stack"
+    subgraph Observability ["Observability Stack"]
         Tempo[("Grafana Tempo")]
         Prometheus[("Prometheus")]
         Loki[("Grafana Loki")]
     end
-    "Rust Backend Service" -.->|OTel Trace/Logs| Tempo
-    "Rust Backend Service" -.->|Metrics| Prometheus
+    WorkerPool -.->|OTel Trace/Logs| Tempo
+    WorkerPool -.->|Metrics| Prometheus
 ```
 
 ### Key Components
