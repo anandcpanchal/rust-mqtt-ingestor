@@ -6,7 +6,10 @@ prometheus:
     serviceMonitorNamespaceSelector: {}
     externalLabels:
       cluster: local
-  
+
+kubeProxy:
+  enabled: false
+
 nodeExporter:
   enabled: true
 
