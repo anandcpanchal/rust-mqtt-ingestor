@@ -23,6 +23,17 @@ graph TD
     
     Executor -->|"Batch Insert"| PgBouncer
     PgBouncer -->|"Connection Pool"| TimescaleDB[("TimescaleDB")]
+
+    %% Observability Connections
+    Devices -.->|OTel Trace| Tempo
+    EMQX -.->|OTel Trace| Tempo
+    subgraph "Observability Stack"
+        Tempo[("Grafana Tempo")]
+        Prometheus[("Prometheus")]
+        Loki[("Grafana Loki")]
+    end
+    "Rust Backend Service" -.->|OTel Trace/Logs| Tempo
+    "Rust Backend Service" -.->|Metrics| Prometheus
 ```
 
 ### Key Components
@@ -463,6 +474,31 @@ The circuit breaker is fully instrumented to provide real-time visibility into d
     - `db_circuit_breaker_state`: Gauge indicating the current state (1.0 = Open, 0.5 = Half-Open, 0.0 = Closed).
 
 These metrics are accessible via the Prometheus endpoint.
+
+---
+
+## 🔍 Distributed Tracing & Observability
+
+The system implements full-path distributed tracing using **OpenTelemetry** and **Grafana Tempo**, allowing you to follow a single message from the edge to the database.
+
+### 1. Trace Pipeline
+- **Propagation**: `traceparent` is injected into MQTT v5 User Properties and the JSON payload.
+- **Bridge Persistence**: Vector extracts the context and maps it to Kafka Headers.
+- **Batch Linking**: The Backend uses **Span Links** to reconnect many-to-one batched database writes to their original ingestion spans.
+
+### 2. How to Use & Pinpoint Messages
+To investigate a specific message or performance bottleneck:
+
+1.  **Search by Device/Sequence**: In Grafana Explore (Tempo), use TraceQL to find a specific message:
+    ```traceql
+    { .device_id = "device_001" && .sequence_id = 123 }
+    ```
+2.  **Analyze the Flow**:
+    - `mqtt_publish`: Time spent on the edge.
+    - `vector`: Latency introduced by the bridge.
+    - `worker_process`: Internal backend logic (parsing, alerts).
+    - `batch_flush` -> `store_telemetry_batch`: Database insertion time.
+3.  **Jump to Logs**: Use the "Logs for this span" feature in Grafana to see precisely what happened during that message's lifecycle across Loki.
 
 ---
 
