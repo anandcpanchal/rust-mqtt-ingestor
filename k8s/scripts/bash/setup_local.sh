@@ -35,12 +35,7 @@ helm upgrade --install cert-manager jetstack/cert-manager \
 echo "   - Monitoring Stack (Required for ServiceMonitor CRDs)"
 # We use kube-prometheus-stack to get the operator and CRDs
 helm upgrade --install prometheus prometheus-community/kube-prometheus-stack \
-  --set prometheus.service.type=NodePort \
-  --set grafana.service.type=NodePort \
-  --set grafana.service.nodePort=30000 \
-  --set grafana.adminPassword=admin \
-  --set nodeExporter.enabled=false \
-  --wait
+  --values k8s/helm-values/monitoring-values.yaml
 
 echo "   - Redpanda"
 helm upgrade --install redpanda redpanda/redpanda \

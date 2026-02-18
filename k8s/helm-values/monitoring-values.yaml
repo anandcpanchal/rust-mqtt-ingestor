@@ -4,6 +4,15 @@ prometheus:
     serviceMonitorSelectorNilUsesHelmValues: false
     serviceMonitorSelector: {}
     serviceMonitorNamespaceSelector: {}
+    externalLabels:
+      cluster: local
+  
+nodeExporter:
+  enabled: true
+
+prometheus-node-exporter:
+  hostRootFsMount:
+    enabled: false
 
 grafana:
   adminPassword: "admin"

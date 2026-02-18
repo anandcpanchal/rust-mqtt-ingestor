@@ -20,11 +20,6 @@ data:
       trace_idle_period: 10s
       max_block_duration: 5m
 
-    compactor:
-      compaction:
-        max_block_bytes: 1073741824
-        block_retention: 1h
-
     storage:
       trace:
         backend: local
@@ -50,7 +45,7 @@ spec:
     spec:
       containers:
         - name: tempo
-          image: grafana/tempo:latest
+          image: grafana/tempo:2.4.0
           args:
             - "-config.file=/etc/tempo/tempo.yaml"
           ports:
