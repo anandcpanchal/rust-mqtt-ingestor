@@ -25,8 +25,7 @@ graph TD
     PgBouncer -->|"Connection Pool"| TimescaleDB[("TimescaleDB")]
 
     %% Observability Connections
-    Devices -.->|OTel Trace| Tempo
-    EMQX -.->|OTel Trace| Tempo
+    EMQX -.->|Entry| Redpanda
     subgraph Observability ["Observability Stack"]
         Tempo[("Grafana Tempo")]
         Prometheus[("Prometheus")]
@@ -237,7 +236,6 @@ pub struct PackageData {
 ### 3. Update Persistence Layer (`src/adapters/timescale.rs`)
 Rewrite the SQL `INSERT` statement in the `store_telemetry` and `store_telemetry_batch` functions to target your new table and columns.
 ```rust
-
 let query = r#"
     INSERT INTO raw_packages (time, package_id, location, status)
     VALUES ($1, $2, $3, $4)
@@ -479,12 +477,11 @@ These metrics are accessible via the Prometheus endpoint.
 
 ## 🔍 Distributed Tracing & Observability
 
-The system implements full-path distributed tracing using **OpenTelemetry** and **Grafana Tempo**, allowing you to follow a single message from the edge to the database.
+The system implements high-fidelity distributed tracing starting from **System Ingress**. This provides a practical approach where external IoT devices are treated as simple data sources, and the system monitors everything from the moment it enters our control.
 
 ### 1. Trace Pipeline
-- **Propagation**: `traceparent` is injected into MQTT v5 User Properties and the JSON payload.
-- **Bridge Persistence**: Vector extracts the context and maps it to Kafka Headers.
-- **Batch Linking**: The Backend uses **Span Links** to reconnect many-to-one batched database writes to their original ingestion spans.
+- **Start Point**: The `iot-backend` (via Kafka Consumer) starts a root trace for every incoming message.
+- **Latency Measurement**: Vector adds an `ingest_timestamp` to ensure we can measure the bridge/broker delay within the trace.
 
 ### 2. How to Use & Pinpoint Messages
 To investigate a specific message or performance bottleneck:
@@ -494,8 +491,7 @@ To investigate a specific message or performance bottleneck:
     { .device_id = "device_001" && .sequence_id = 123 }
     ```
 2.  **Analyze the Flow**:
-    - `mqtt_publish`: Time spent on the edge.
-    - `vector`: Latency introduced by the bridge.
+    - `ingress_latency` (calculated): Measures the delay from broker/bridge to backend.
     - `worker_process`: Internal backend logic (parsing, alerts).
     - `batch_flush` -> `store_telemetry_batch`: Database insertion time.
 3.  **Jump to Logs**: Use the "Logs for this span" feature in Grafana to see precisely what happened during that message's lifecycle across Loki.

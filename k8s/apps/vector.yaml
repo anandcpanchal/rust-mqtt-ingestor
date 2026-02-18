@@ -18,15 +18,10 @@ data:
     source = '''
     payload = parse_json!(.message)
     
-    # Extract traceparent from JSON payload or metadata
-    # JSON payload is now our primary source for trace context from load-tester
-    tp = payload.otel_context.traceparent || .metadata.user_properties.traceparent
+    # Record arrival timestamp for ingress latency measurement in backend
+    payload.ingest_timestamp = to_unix_timestamp(now(), unit: "milliseconds")
 
     . = { "topic": .topic, "payload": payload }
-
-    if tp != null {
-        .kafka_headers = { "traceparent": tp }
-    }
     '''
 
     [sinks.kafka_sink]
