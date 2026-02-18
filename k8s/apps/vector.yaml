@@ -61,6 +61,12 @@ spec:
       - name: vector
         image: timberio/vector:nightly-debian
         args: ["--config", "/etc/vector/vector.toml"]
+        resources:
+          requests:
+            cpu: "10m" # Low for testing
+          limits:
+            cpu: "500m"
+            memory: "256Mi"
         env:
         - name: MQTT_USERNAME
           valueFrom:
@@ -98,3 +104,24 @@ spec:
     targetPort: 9090
     name: metrics
   type: ClusterIP
+
+---
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: vector-hpa
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: vector
+  minReplicas: 1
+  maxReplicas: 5
+  metrics:
+  - type: Resource
+    resource:
+      name: cpu
+      target:
+        type: Utilization
+        averageUtilization: 50
+
