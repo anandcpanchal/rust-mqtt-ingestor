@@ -9,31 +9,39 @@ The system decouples **Ingestion** (MQTT) from **Processing** (Rust) using Redpa
 
 ```mermaid
 graph TD
-    Devices["IoT Devices"] -->|MQTT Publish| EMQX["EMQX Broker"]
-    EMQX -->|"Bridge"| Vector["Vector"]
-    Vector -->|"Push (JSON)"| Redpanda[("Redpanda (Kafka)")]
-    
-    subgraph Backend ["Rust Backend Service"]
-        Redpanda -->|Sub: iot-stream| Consumer["Kafka Consumer"]
-        Consumer -->|"Channel (Raw)"| WorkerPool["Worker Pool (x4)"]
-        WorkerPool -->|Process & Alert| AlertLogic["Alert Logic"]
-        AlertLogic -->|"Pub (MQTT)"| EMQX
-        WorkerPool -->|"Channel (Batch)"| Executor["Batch Executor"]
-        WorkerPool -->|Failures| DLQ[("DLQ (Redpanda)")]
+    subgraph Ingestion ["1. Ingestion Layer"]
+        Devices["IoT Devices"] -->|"MQTT (v5)"| EMQX["EMQX Broker"]
+        EMQX -->|"Bridge"| Vector["Vector"]
     end
-    
-    Executor -->|"Batch Insert"| PgBouncer
-    PgBouncer -->|"Connection Pool"| TimescaleDB[("TimescaleDB")]
 
-    %% Observability Connections
-    Vector -.->|Entry/Start Trace| Tempo
-    subgraph Observability ["Observability Stack"]
-        Tempo[("Grafana Tempo")]
-        Prometheus[("Prometheus")]
-        Loki[("Grafana Loki")]
+    subgraph Streaming ["2. Streaming Layer (Durable Storage)"]
+        Vector -->|"Push"| Redpanda[("Redpanda (Kafka)")]
+        Redpanda --- Console["Redpanda Console"]
     end
-    WorkerPool -.->|OTel Trace/Logs| Tempo
-    WorkerPool -.->|Metrics| Prometheus
+
+    subgraph Processing ["3. Processing Layer"]
+        Redpanda -->|Sub| Consumer["Kafka Consumer"]
+        subgraph WorkerPool ["Concurrent Workers"]
+            Consumer -->|"Channel (Raw)"| Workers["Worker Pool (x4)"]
+            Workers -->|Logic| AlertLogic["Alert Logic"]
+        end
+        AlertLogic -->|"Pub Alert"| EMQX
+        Workers -->|"Channel (Batch)"| Executor["Batch Executor"]
+        Workers -->|Failures| DLQ[("DLQ (Redpanda)")]
+    end
+
+    subgraph Persistence ["4. Persistence Layer"]
+        Executor -->|"Bulk Insert"| PgBouncer["PgBouncer"]
+        PgBouncer -->|"Pool"| TimescaleDB[("TimescaleDB (Postgres)")]
+    end
+
+    subgraph Observability ["5. Observability Stack"]
+        Vector -.->|Entry Trace| Tempo[("Grafana Tempo")]
+        Workers -.->|Trace / Logs| Tempo
+        Workers -.->|Metrics| Prometheus[("Prometheus")]
+        Tempo --- Grafana["Grafana UI"]
+        Prometheus --- Grafana
+    end
 ```
 
 ### Key Components
