@@ -5,6 +5,8 @@ use std::sync::Arc;
 use tracing::{info, warn, error, instrument};
 use rumqttc::{Event, Packet, AsyncClient};
 use std::time::Duration;
+use opentelemetry::trace::TraceContextExt;
+use tracing_opentelemetry::OpenTelemetrySpanExt;
 
 pub struct ServiceProcessor {
     storage: Arc<dyn StorageRepository>,
@@ -22,11 +24,24 @@ impl ServiceProcessor {
     }
 
     /// Process Ingest: Parse, Validate, Check Alerts, Return Telemetry for Batching
-    #[instrument(skip(self, payload), fields(topic = %topic, payload_len = payload.len()))]
+    #[instrument(
+        skip(self, payload), 
+        fields(
+            topic = %topic, 
+            payload_len = payload.len(),
+            device_id = tracing::field::Empty,
+            sequence_id = tracing::field::Empty
+        )
+    )]
     pub async fn process_ingest_logic(&self, topic: &str, payload: &[u8]) -> anyhow::Result<Option<Telemetry>> {
         // 1. Parse
         let telemetry: Telemetry = serde_json::from_slice(payload)
             .map_err(|e| anyhow::anyhow!("Invalid JSON: {:?}", e))?;
+
+        // Record business IDs in span for searchable pinpointing
+        let span = tracing::Span::current();
+        span.record("device_id", &telemetry.device_id);
+        span.record("sequence_id", &telemetry.sequence_id);
 
         // 2. Validate
         if telemetry.device_id.is_empty() {
@@ -225,6 +240,7 @@ pub async fn run_batch_executor(
     loop {
         let mut batch_telemetry = Vec::with_capacity(1000);
         let mut batch_packets = Vec::with_capacity(1000);
+        let mut batch_contexts = Vec::with_capacity(1000);
 
         // Block for 1st item
         let first = match receiver.recv().await {
@@ -236,6 +252,11 @@ pub async fn run_batch_executor(
         };
         batch_telemetry.push(first.telemetry);
         if let Some(p) = first.packet { batch_packets.push(p); }
+        
+        let parent_cx = opentelemetry::global::get_text_map_propagator(|propagator| {
+            propagator.extract(&first.otel_context)
+        });
+        batch_contexts.push(parent_cx);
 
         // Gather more items with timeout
         let deadline = tokio::time::Instant::now() + Duration::from_millis(100);
@@ -248,6 +269,11 @@ pub async fn run_batch_executor(
                 Ok(Some(msg)) => {
                     batch_telemetry.push(msg.telemetry);
                     if let Some(p) = msg.packet { batch_packets.push(p); }
+                    
+                    let parent_cx = opentelemetry::global::get_text_map_propagator(|propagator| {
+                        propagator.extract(&msg.otel_context)
+                    });
+                    batch_contexts.push(parent_cx);
                 }
                 _ => break, // Timeout or Channel Closed or Error
             }
@@ -255,6 +281,19 @@ pub async fn run_batch_executor(
 
         // Flush Batch
         if !batch_telemetry.is_empty() {
+             let span = tracing::info_span!("batch_flush", batch_size = batch_telemetry.len());
+             
+             // Add links to all parent contexts in the batch
+             for parent_cx in &batch_contexts {
+                 let parent_span = parent_cx.span();
+                 let span_context = parent_span.span_context();
+                 if span_context.is_valid() {
+                     span.add_link(span_context.clone());
+                 }
+             }
+
+             let _enter = span.enter();
+
              let batch_len = batch_telemetry.len() as f64;
              metrics::histogram!("batch_size", batch_len);
              let start = std::time::Instant::now();

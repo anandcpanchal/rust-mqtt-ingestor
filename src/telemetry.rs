@@ -5,24 +5,49 @@ use tracing_subscriber::{prelude::*, Registry};
 use tracing_subscriber::fmt::format::FmtSpan;
 use rdkafka::message::Headers;
 
-pub fn init_telemetry(service_name: &str, endpoint: &str) -> anyhow::Result<()> {
+pub fn init_telemetry(service_name: &str, endpoint: &str, batch_mode: bool) -> anyhow::Result<()> {
     // 1. Setup Propagator
     global::set_text_map_propagator(TraceContextPropagator::new());
 
-    // 2. Setup OTLP Exporter (HTTP)
-    let exporter = opentelemetry_otlp::new_exporter()
-        .http()
-        .with_endpoint(endpoint);
+    // 2. Setup Tracer Provider & Tracer
+    let tracer = if endpoint.contains("4317") {
+        let exporter = opentelemetry_otlp::new_exporter()
+            .tonic()
+            .with_endpoint(endpoint);
 
-    // 3. Setup Tracer Provider & Tracer
-    let tracer = opentelemetry_otlp::new_pipeline()
-        .tracing()
-        .with_exporter(exporter)
-        .with_trace_config(
-            sdktrace::config()
-                .with_resource(Resource::new(vec![KeyValue::new("service.name", service_name.to_string())])),
-        )
-        .install_batch(opentelemetry::runtime::Tokio)?;
+        let mut pipeline = opentelemetry_otlp::new_pipeline()
+            .tracing()
+            .with_exporter(exporter)
+            .with_trace_config(
+                sdktrace::config()
+                    .with_resource(Resource::new(vec![KeyValue::new("service.name", service_name.to_string())])),
+            );
+
+        if batch_mode {
+            pipeline.install_batch(opentelemetry::runtime::Tokio)?
+        } else {
+            pipeline.install_simple()?
+        }
+    } else {
+        let exporter = opentelemetry_otlp::new_exporter()
+            .http()
+            .with_endpoint(endpoint)
+            .with_protocol(opentelemetry_otlp::Protocol::HttpBinary);
+
+        let mut pipeline = opentelemetry_otlp::new_pipeline()
+            .tracing()
+            .with_exporter(exporter)
+            .with_trace_config(
+                sdktrace::config()
+                    .with_resource(Resource::new(vec![KeyValue::new("service.name", service_name.to_string())])),
+            );
+
+        if batch_mode {
+            pipeline.install_batch(opentelemetry::runtime::Tokio)?
+        } else {
+            pipeline.install_simple()?
+        }
+    };
 
     // 4. Wrap with tracing-opentelemetry layer
     let otel_layer = tracing_opentelemetry::layer().with_tracer(tracer);
@@ -32,7 +57,9 @@ pub fn init_telemetry(service_name: &str, endpoint: &str) -> anyhow::Result<()> 
         .with_span_events(FmtSpan::CLOSE)
         .with_target(false);
     
-    let env_filter = tracing_subscriber::EnvFilter::from_default_env();
+    // Explicitly set default info if RUST_LOG is empty
+    let env_filter = tracing_subscriber::EnvFilter::try_from_default_env()
+        .unwrap_or_else(|_| tracing_subscriber::EnvFilter::new("info"));
 
     Registry::default()
         .with(env_filter)

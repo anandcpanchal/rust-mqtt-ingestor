@@ -1,11 +1,17 @@
 use clap::Parser;
-use rumqttc::{AsyncClient, MqttOptions, QoS};
+use rumqttc::v5::{AsyncClient, MqttOptions};
+use rumqttc::v5::mqttbytes::QoS;
+use rumqttc::v5::mqttbytes::v5::PublishProperties;
 use serde::Serialize;
 use std::time::Duration;
 use tokio::time;
 use rand::Rng;
 use sqlx::postgres::PgPoolOptions;
-
+use tracing::{info, info_span, instrument::Instrument};
+use poc_mqtt_backend::telemetry::init_telemetry;
+use opentelemetry::propagation::TextMapPropagator;
+use opentelemetry::sdk::propagation::TraceContextPropagator;
+use std::collections::HashMap;
 
 #[derive(Parser, Debug)]
 #[command(author, version, about, long_about = None)]
@@ -45,15 +51,21 @@ struct Args {
     /// Superuser password
     #[arg(long, default_value = "load_tester_password")]
     superuser_password: String,
+
+    /// OTLP Endpoint for Tracing
+    #[arg(long, default_value = "http://localhost:4317")]
+    otel_endpoint: String,
 }
 
-#[derive(Serialize)]
+#[derive(Serialize, Clone)]
 struct TelemetryPayload {
     time: String, // ISO 8601
     device_id: String,
     sequence_id: u64,
     temperature: f64,
     battery: u32,
+    #[serde(skip_serializing_if = "HashMap::is_empty")]
+    otel_context: HashMap<String, String>,
 }
 
 #[tokio::main]
@@ -61,7 +73,10 @@ async fn main() -> anyhow::Result<()> {
     let args = Args::parse();
     println!("Starting Load Tester with config: {:?}", args);
 
-    // 0. Connect to Database & Register Users
+    // 0a. Initialize Telemetry
+    init_telemetry("load-tester", &args.otel_endpoint, false)?;
+
+    // 0b. Connect to Database & Register Users
     println!("Connecting to Database...");
     let pool = PgPoolOptions::new()
         .max_connections(5)
@@ -78,7 +93,7 @@ async fn main() -> anyhow::Result<()> {
     .execute(&pool)
     .await?;
 
-    // Register Simulated Users (Optional but good for completeness if we add user-level ACLs later)
+    // Register Simulated Users
     println!("Registering {} simulated users...", args.users);
     for i in 1..=args.users {
         let username = format!("user_{}", i);
@@ -91,20 +106,18 @@ async fn main() -> anyhow::Result<()> {
     }
     println!("User registration complete.");
 
-    // 1. Setup MQTT Client
+    // 1. Setup MQTT v5 Client
     let client_id = format!("load_tester_{}", uuid::Uuid::new_v4());
     let mut mqttoptions = MqttOptions::new(client_id, &args.host, args.port);
-    mqttoptions.set_credentials(&args.superuser, &args.superuser_password); // AUTHENTICATION ADDED
+    mqttoptions.set_credentials(&args.superuser, &args.superuser_password);
     mqttoptions.set_keep_alive(Duration::from_secs(5));
-    mqttoptions.set_clean_session(true);
+    mqttoptions.set_clean_start(true);
 
     let (client, mut eventloop) = AsyncClient::new(mqttoptions, 100);
 
-    // Spawn Event Loop in background to handle network traffic
+    // Spawn Event Loop
     tokio::spawn(async move {
-        while let Ok(_) = eventloop.poll().await {
-            // Just drain the event loop
-        }
+        while let Ok(_) = eventloop.poll().await { }
     });
 
     // 2. Load Generation Loop
@@ -112,10 +125,9 @@ async fn main() -> anyhow::Result<()> {
     let interval_duration = Duration::from_micros(1_000_000 / args.rate);
     let mut interval = time::interval(interval_duration);
     
-    // Counter for distribution
     let mut total_sent = 0;
-    
-    // Simulate until duration expires
+    let propagator = TraceContextPropagator::new();
+
     loop {
         interval.tick().await;
 
@@ -124,12 +136,11 @@ async fn main() -> anyhow::Result<()> {
             break;
         }
 
-        // Round-robin selection of user and device
         let total_devices = args.users * args.devices_per_user;
         let index = total_sent % total_devices as u64;
         
-        let user_idx = (index / args.devices_per_user as u64) + 1; // 1-based
-        let device_idx = (index % args.devices_per_user as u64) + 1; // 1-based
+        let user_idx = (index / args.devices_per_user as u64) + 1;
+        let device_idx = (index % args.devices_per_user as u64) + 1;
 
         let user_id = format!("user_{}", user_idx);
         let device_id = format!("device_{:03}", device_idx);
@@ -139,27 +150,53 @@ async fn main() -> anyhow::Result<()> {
         let payload = TelemetryPayload {
             time: ::time::OffsetDateTime::now_utc().format(&::time::format_description::well_known::Rfc3339).unwrap(),
             device_id: device_id.clone(),
-            sequence_id: (total_sent / total_devices as u64) + 1, // Sequence per device
-            temperature: rng.gen_range(20.0..45.0), // Random temp 20-45 C
+            sequence_id: (total_sent / total_devices as u64) + 1,
+            temperature: rng.gen_range(20.0..45.0),
             battery: rng.gen_range(10..100),
+            otel_context: HashMap::new(),
         };
 
         let topic = format!("users/{}/devices/{}/telemetry", user_id, device_id);
         let payload_json = serde_json::to_vec(&payload)?;
 
-        // Publish
-        if let Err(e) = client.publish(&topic, QoS::AtLeastOnce, false, payload_json).await {
-            eprintln!("Failed to publish: {:?}", e);
-        }
+        // Create Span and Inject Trace Context
+        let span = info_span!("mqtt_publish", %topic, %device_id);
+        let span_clone = span.clone();
+        let client_clone = client.clone();
+        let propagator_clone = propagator.clone();
+        
+        async move {
+            // Context injection
+            let mut context_map = HashMap::new();
+            propagator_clone.inject_context(&tracing_opentelemetry::OpenTelemetrySpanExt::context(&span_clone), &mut context_map);
+            
+            // Add context to payload for reliable propagation
+            let mut final_payload = payload.clone();
+            final_payload.otel_context = context_map.clone();
+            let payload_json = serde_json::to_vec(&final_payload).unwrap_or_default();
+            
+            // Publish with MQTT v5 User Properties (keep for compatibility/completeness)
+            let mut props = PublishProperties::default();
+            if let Some(traceparent) = context_map.get("traceparent") {
+                props.user_properties.push((
+                    "traceparent".to_string(),
+                    traceparent.to_string(),
+                ));
+            }
+
+            if let Err(e) = client_clone.publish_with_properties(&topic, QoS::AtLeastOnce, false, payload_json, props).await {
+                eprintln!("Failed to publish: {:?}", e);
+            }
+        }.instrument(span).await;
 
         total_sent += 1;
-
         if total_sent % args.rate == 0 {
             println!("Sent {} messages...", total_sent);
         }
     }
 
     println!("Load Test Complete. Total messages sent: {}", total_sent);
+    poc_mqtt_backend::telemetry::shutdown_telemetry();
     Ok(())
 }
 

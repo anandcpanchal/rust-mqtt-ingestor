@@ -6,11 +6,9 @@ data:
   vector.toml: |
     [sources.emqx_source]
     type = "mqtt"
-
     host = "emqx.default.svc.cluster.local"
     port = 1883
     topic = "users/+/devices/+/telemetry"
-    
     user = "${MQTT_USERNAME}"
     password = "${MQTT_PASSWORD}"
 
@@ -19,7 +17,16 @@ data:
     inputs = ["emqx_source"]
     source = '''
     payload = parse_json!(.message)
+    
+    # Extract traceparent from JSON payload or metadata
+    # JSON payload is now our primary source for trace context from load-tester
+    tp = payload.otel_context.traceparent || .metadata.user_properties.traceparent
+
     . = { "topic": .topic, "payload": payload }
+
+    if tp != null {
+        .kafka_headers = { "traceparent": tp }
+    }
     '''
 
     [sinks.kafka_sink]
@@ -30,6 +37,7 @@ data:
     encoding.codec = "json"
     sasl.enabled = false
     tls.enabled = false
+    headers_key = "kafka_headers"
 
     [sources.internal_metrics]
     type = "internal_metrics"
