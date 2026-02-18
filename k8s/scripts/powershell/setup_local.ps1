@@ -31,15 +31,11 @@ helm upgrade --install cert-manager jetstack/cert-manager `
   --version v1.13.3 `
   --set installCRDs=true --wait
 
+
 Write-Host "   - Monitoring Stack (Required for ServiceMonitor CRDs)"
 # We use kube-prometheus-stack to get the operator and CRDs
 helm upgrade --install prometheus prometheus-community/kube-prometheus-stack `
-  --set prometheus.service.type=NodePort `
-  --set grafana.service.type=NodePort `
-  --set grafana.service.nodePort=30000 `
-  --set grafana.adminPassword=admin `
-  --set nodeExporter.enabled=false `
-  --wait
+  --values k8s/helm-values/monitoring-values.yaml
 
 Write-Host "   - Redpanda"
 helm upgrade --install redpanda redpanda/redpanda `
@@ -72,3 +68,7 @@ Write-Host "`n✅ Deployment Complete!" -ForegroundColor Green
 Write-Host "   - EMQX Dashboard: http://localhost:18083 (admin/public)"
 Write-Host "   - Grafana: http://localhost:30000 (admin/admin)"
 Write-Host "   - Redpanda: exposed on NodePorts"
+Write-Host ""
+Write-Host "🔌 Useful Port-Forward Commands (Run in separate terminals):" -ForegroundColor Cyan
+Write-Host "   - TimescaleDB (Local Access): kubectl port-forward svc/timescaledb 5432:5432"
+Write-Host "   - Tempo (OTLP gRPC):          kubectl port-forward svc/tempo 4317:4317"
