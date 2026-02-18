@@ -49,6 +49,7 @@ graph TD
     *   **EMQX 5.3**: Open Source MQTT Broker.
     *   **TimescaleDB**: Time-series optimized PostgreSQL.
     *   **Redpanda Console**: UI for monitoring topics (Port `8080`).
+    *   **Prometheus**: Metrics endpoint (Port `9000`).
 
 ---
 
@@ -143,8 +144,6 @@ cargo run --bin load-tester -- --users 30 --devices-per-user 3 --rate 200
 ```
 
 
-
-
 ---
 
 
@@ -171,58 +170,6 @@ Check Vector logs to ensure successful connection:
 ```bash
 docker logs vector
 ```
-
----
-
-## 📈 Observability & Monitoring
-
-The system includes a fully configured **Prometheus + Grafana** stack for real-time monitoring.
-
-### 1. Access Dashboard
-*   **Grafana**: [http://localhost:3000](http://localhost:3000)
-*   **User/Pass**: `admin` / `admin`
-*   **Dashboard**: "Backend Overview" (Auto-provisioned)
-
-### 2. Dashboard Panels & Metrics Explained
-
-The **Backend Overview** dashboard is divided into logical sections to provide a complete view of system health.
-
-#### **A. Health & Status (Top Row)**
-| Panel | Metric | Significance |
-| :--- | :--- | :--- |
-| **Service Health** | `up{job="backend"}` | **Critical**. Shows if the Rust backend container is running and reachable by Prometheus. <br>🟢 UP: Normal <br>🔴 DOWN: Container crashed or is restarting. |
-| **Active Clients** | `count(rate(mqtt_messages_received_total) > 0)` | **Engagement**. Number of unique devices currently sending data. Differentiates between "connected" and "active". |
-| **Alerts Triggered** | `increase(alerts_triggered_total)` | **Business Logic**. Count of rule violations (e.g., Temp > 80) detected in the last minute. |
-| **System Errors** | `increase(worker_errors_total)` | **Stability**. Count of internal processing errors (parsing, db connection, etc.). Should ideally be 0. |
-
-#### **B. Ingestion & Throughput**
-| Panel | Metric | Significance |
-| :--- | :--- | :--- |
-| **Total Messages** | `rate(mqtt_messages_received_total)` | **Volume**. Total ingress traffic (msg/sec) from Redpanda to the Backend. |
-| **Avg Speed** | `Total / Active Clients` | **Per-Device Load**. Average message rate per active device. High variance might indicate spamming devices. |
-| **Top 5 Topics** | `topk(5, rate(...) by (topic))` | **Hotspots**. Identifies which specific topics/devices are generating the most load. |
-| **Idle Clients** | `count(rate(...) == 0)` | **Dormant**. Devices that are monitored but haven't sent data recently. |
-
-#### **C. Processing & Persistence**
-| Panel | Metric | Significance |
-| :--- | :--- | :--- |
-| **Consumer Lag** | `kafka_max_offset - committed_offset` | **Bottleneck Indicator**. The difference between the latest message in Redpanda and what the Backend has processed. <br>🟢 Low: Real-time processing. <br>🔴 High/Growing: Backend cannot keep up with ingestion rate. |
-| **DB Write Rate** | `rate(total_rows_inserted)` | **Persistence**. Number of rows inserted into TimescaleDB per second. Should roughly match Ingestion Rate (minus filtered messages). |
-| **DB Write Duration** | `db_write_duration_seconds` | **Latency**. Time taken to commit a batch to the database. Spikes here indicate DB stress. |
-
-#### **D. System Resources (cAdvisor)**
-*   **CPU Usage**: Container CPU utilization.
-*   **Memory Usage**: RAM consumption. Watch for memory leaks (steady increase).
-
-### 3. Status Matrix
-The "Traffic Light" panels provide an instant visual health check:
-
-| State | Service Health | Ingestion Panels | Error Panel |
-| :--- | :--- | :--- | :--- |
-| **Active & Healthy** | 🟢 **UP** | 🟢 **Green** (> 0) | 🟢 **0** |
-| **Idle & Healthy** | 🟢 **UP** | 🔵 **Blue** (0) | 🟢 **0** |
-| **Backend Down** | 🔴 **DOWN** | ⚪️ *No Data* | ⚪️ *No Data* |
-| **Degraded** | 🟢 **UP** | 🟢 **Green** | 🔴 **Red** (> 0) |
 
 ---
 
@@ -515,7 +462,7 @@ The circuit breaker is fully instrumented to provide real-time visibility into d
     - `db_circuit_breaker_rejected_total`: Counter for calls rejected while the circuit is open.
     - `db_circuit_breaker_state`: Gauge indicating the current state (1.0 = Open, 0.5 = Half-Open, 0.0 = Closed).
 
-These metrics are accessible via the Prometheus endpoint and visualized in Grafana.
+These metrics are accessible via the Prometheus endpoint.
 
 ---
 
@@ -577,4 +524,3 @@ For a more production-like environment, you can run the stack on a local Kuberne
             --duration 30 \
             --database-url postgres://postgres:password@localhost:5432/iot_db
         ```
-
