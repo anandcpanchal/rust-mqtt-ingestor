@@ -51,7 +51,16 @@ impl TimescaleRepository {
 
 #[async_trait]
 impl StorageRepository for TimescaleRepository {
-    #[instrument(skip(self, data), fields(device_id = %data.device_id, sequence_id = %data.sequence_id))]
+    #[instrument(
+        skip(self, data), 
+        fields(
+            device_id = %data.device_id, 
+            sequence_id = %data.sequence_id,
+            db.system = "postgresql",
+            db.name = "iot_db",
+            otel.kind = "client"
+        )
+    )]
     async fn store_telemetry(&self, data: &Telemetry) -> anyhow::Result<()> {
         let res = self.cb.call(async move {
             let query = r#"
@@ -88,7 +97,16 @@ impl StorageRepository for TimescaleRepository {
         }
     }
 
-    #[instrument(skip(self, alert), fields(device_id = %alert.device_id, alert_type = %alert.alert_type))]
+    #[instrument(
+        skip(self, alert), 
+        fields(
+            device_id = %alert.device_id, 
+            alert_type = %alert.alert_type,
+            db.system = "postgresql",
+            db.name = "iot_db",
+            otel.kind = "client"
+        )
+    )]
     async fn store_alert(&self, alert: &Alert) -> anyhow::Result<()> {
         let res = self.cb.call(async move {
             let query = r#"
@@ -280,7 +298,14 @@ impl StorageRepository for TimescaleRepository {
         }
     }
 
-    #[instrument(skip(self, batch))]
+    #[instrument(
+        skip(self, batch),
+        fields(
+            db.system = "postgresql",
+            db.name = "iot_db",
+            otel.kind = "client"
+        )
+    )]
     async fn store_telemetry_batch(&self, batch: &[Telemetry]) -> anyhow::Result<()> {
         if batch.is_empty() {
             return Ok(());

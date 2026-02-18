@@ -14,6 +14,7 @@ pub struct AppConfig {
     pub kafka_brokers: String,
     pub kafka_topic: String,
     pub kafka_group: String,
+    pub otel_endpoint: String,
 }
 
 impl AppConfig {
@@ -37,6 +38,7 @@ impl AppConfig {
             kafka_brokers: env::var("KAFKA_BROKERS").unwrap_or_else(|_| "localhost:19092".to_string()),
             kafka_topic: env::var("KAFKA_TOPIC").unwrap_or_else(|_| "iot-stream".to_string()),
             kafka_group: env::var("KAFKA_GROUP").unwrap_or_else(|_| "rust-backend-group".to_string()),
+            otel_endpoint: env::var("OTEL_EXPORTER_OTLP_ENDPOINT").unwrap_or_else(|_| "http://tempo:4318".to_string()),
         };
 
         Ok(config)

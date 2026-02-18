@@ -1,14 +1,8 @@
-mod config;
-mod domain;
-mod ports;
-mod adapters;
-mod service;
-mod state; 
-
-use crate::config::AppConfig;
-use crate::service::processor::{ServiceProcessor, run_mqtt_maintenance_loop, run_batch_executor};
-use crate::adapters::{TimescaleRepository, MqttAdapter, KafkaAdapter};
-use crate::state::config_manager::ConfigManager;
+use poc_mqtt_backend::config::AppConfig;
+use poc_mqtt_backend::service::processor::{ServiceProcessor, run_mqtt_maintenance_loop, run_batch_executor};
+use poc_mqtt_backend::adapters::{TimescaleRepository, MqttAdapter, KafkaAdapter};
+use poc_mqtt_backend::state::config_manager::ConfigManager;
+use poc_mqtt_backend::telemetry::{init_telemetry, shutdown_telemetry};
 use sqlx::postgres::PgPoolOptions;
 use std::sync::Arc;
 use tracing::{info, error, warn};
@@ -18,10 +12,11 @@ async fn main() -> anyhow::Result<()> {
     // 0. Load Env Vars First
     dotenvy::dotenv().ok();
 
-    // 1. Initialize Structured Logging
-    tracing_subscriber::fmt()
-        .with_env_filter(tracing_subscriber::EnvFilter::from_default_env())
-        .init();
+    // 1. Initialize Structured Logging & Tracing
+    let otel_endpoint = std::env::var("OTEL_EXPORTER_OTLP_ENDPOINT")
+        .unwrap_or_else(|_| "http://tempo:4318".to_string());
+    
+    init_telemetry("iot-backend", &otel_endpoint, true)?;
 
     info!("Starting IoT Rust Backend (Kafka Consumer Mode)...");
 
@@ -98,10 +93,10 @@ async fn main() -> anyhow::Result<()> {
 
     // 5. Initialize DLQ Producer
     let dlq_topic = std::env::var("DLQ_TOPIC").unwrap_or_else(|_| "iot-stream-dlq".to_string());
-    let dlq_producer = Arc::new(crate::adapters::dlq::KafkaDlqProducer::new(&config.kafka_brokers, &dlq_topic));
+    let dlq_producer = Arc::new(poc_mqtt_backend::adapters::dlq::KafkaDlqProducer::new(&config.kafka_brokers, &dlq_topic));
 
     // 6. Start Worker Pool (Processing Logic)
-    let worker_pool = crate::service::worker_pool::WorkerPool::new(processor.clone(), dlq_producer, 4); // 4 concurrent workers
+    let worker_pool = poc_mqtt_backend::service::worker_pool::WorkerPool::new(processor.clone(), dlq_producer, 4); // 4 concurrent workers
     let worker_handle = tokio::spawn(async move {
         worker_pool.run(raw_rx, batch_tx).await;
     });
