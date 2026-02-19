@@ -7,6 +7,7 @@ use tokio::sync::mpsc::Sender;
 use crate::telemetry::KafkaHeaderExtractor;
 use tracing_opentelemetry::OpenTelemetrySpanExt;
 use std::collections::HashMap;
+use opentelemetry::propagation::Extractor;
 
 pub struct KafkaAdapter {
     consumer: StreamConsumer,
@@ -65,12 +66,22 @@ impl KafkaAdapter {
                             let mut otel_context_map = HashMap::new();
                             if let Some(headers) = m.headers() {
                                 let extractor = KafkaHeaderExtractor(headers);
+                                if let Some(val) = extractor.get("traceparent") {
+                                    info!("Received traceparent header: {}", val);
+                                } else {
+                                    warn!("No traceparent header found in message!");
+                                    // Log all keys
+                                    let keys = opentelemetry::propagation::Extractor::keys(&extractor);
+                                    warn!("Available headers: {:?}", keys);
+                                }
+
                                 let context = opentelemetry::global::get_text_map_propagator(|propagator| {
                                     propagator.extract(&extractor)
                                 });
                                 
                                 // Set the parent context for the current span
-                                Span::current().set_parent(context.clone());
+                                // Span::current().set_parent(context.clone()); // REMOVED: This links EVERY message to the long-running loop trace!
+
                                 
                                 // Inject into our internal map for propagation
                                 opentelemetry::global::get_text_map_propagator(|propagator| {

@@ -21,11 +21,66 @@ data:
     # Record arrival timestamp for ingress latency measurement in backend
     payload.ingest_timestamp = to_unix_timestamp(now(), unit: "milliseconds")
 
-    . = { "topic": .topic, "payload": payload }
+    # Generate W3C Trace Context
+    # 1. Trace ID (32 hex chars)
+    trace_id = replace(uuid_v4(), "-", "")
+    
+    # 2. Span ID (16 hex chars)
+    # Re-using a new UUID for randomness, could also use random_bytes if available
+    span_id = slice!(replace(uuid_v4(), "-", ""), 0, 16)
+    
+    # 3. Construct Header: 00-{trace-id}-{span-id}-{flags}
+    traceparent = "00-" + trace_id + "-" + span_id + "-01"
+
+    . = { 
+      "topic": .topic, 
+      "payload": payload,
+      "kafka_headers": {
+        "traceparent": traceparent
+      },
+      # Pass these downstream for the Tempo sink
+      "trace_id": trace_id,
+      "span_id": span_id
+    }
+    '''
+
+    [transforms.format_traces]
+    type = "remap"
+    inputs = ["parse_json"]
+    source = '''
+    start_time = to_string(to_unix_timestamp(now(), unit: "nanoseconds"))
+    end_time = to_string(to_unix_timestamp(now(), unit: "nanoseconds") + 1000000)
+
+    otlp = {
+        "resourceSpans": [{
+            "resource": {
+                "attributes": [
+                    { "key": "service.name", "value": { "stringValue": "vector-bridge" } }
+                ]
+            },
+            "scopeSpans": [{
+                "scope": { "name": "vector" },
+                "spans": [{
+                    "traceId": .trace_id,
+                    "spanId": .span_id,
+                    "name": "mqtt_ingress",
+                    "kind": 3, # SPAN_KIND_PRODUCER
+                    "startTimeUnixNano": start_time,
+                    "endTimeUnixNano": end_time,
+                    "attributes": [
+                        { "key": "topic", "value": { "stringValue": .topic } }
+                    ],
+                    "status": { "code": 1 } # STATUS_CODE_OK
+                }]
+            }]
+        }]
+    }
+    . = { "message": encode_json(otlp) }
     '''
 
     [sinks.kafka_sink]
     type = "kafka"
+    # ... existing kafka config ...
     inputs = ["parse_json"]
     bootstrap_servers = "redpanda:9092"
     topic = "iot-stream"
@@ -33,6 +88,15 @@ data:
     sasl.enabled = false
     tls.enabled = false
     headers_key = "kafka_headers"
+
+    [sinks.tempo_otlp_http]
+    type = "http"
+    inputs = ["format_traces"]
+    uri = "http://tempo:4318/v1/traces"
+    encoding.codec = "text"
+    [sinks.tempo_otlp_http.headers]
+      Content-Type = "application/json"
+
 
     [sources.internal_metrics]
     type = "internal_metrics"

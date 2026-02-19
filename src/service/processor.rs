@@ -288,6 +288,7 @@ pub async fn run_batch_executor(
                  let parent_span = parent_cx.span();
                  let span_context = parent_span.span_context();
                  if span_context.is_valid() {
+                    //  info!("Adding Link to Batch Trace: trace_id={}", span_context.trace_id());
                      span.add_link(span_context.clone());
                  }
              }

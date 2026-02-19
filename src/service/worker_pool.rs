@@ -3,6 +3,7 @@ use tokio::sync::mpsc::{Receiver, Sender};
 use tracing::{info, error};
 use crate::service::processor::{ServiceProcessor, IngestMessage};
 use tracing_opentelemetry::OpenTelemetrySpanExt;
+use opentelemetry::trace::TraceContextExt;
 
 #[derive(Debug)]
 pub struct RawIngestMessage {
