@@ -69,6 +69,6 @@ Write-Host "   - EMQX Dashboard: http://localhost:18083 (admin/public)"
 Write-Host "   - Grafana: http://localhost:30000 (admin/admin)"
 Write-Host "   - Redpanda: exposed on NodePorts"
 Write-Host ""
-Write-Host "🔌 Useful Port-Forward Commands (Run in separate terminals):" -ForegroundColor Cyan
+Write-Host "Useful Port-Forward Commands (Run in separate terminals):" -ForegroundColor Cyan
 Write-Host "   - TimescaleDB (Local Access): kubectl port-forward svc/timescaledb 5432:5432"
 Write-Host "   - Tempo (OTLP gRPC):          kubectl port-forward svc/tempo 4317:4317"

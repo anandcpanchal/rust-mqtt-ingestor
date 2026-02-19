@@ -9,6 +9,11 @@ pub fn init_telemetry(service_name: &str, endpoint: &str, batch_mode: bool) -> a
     // 1. Setup Propagator
     global::set_text_map_propagator(TraceContextPropagator::new());
 
+    // 1b. Setup Error Handler to catch silent failures
+    global::set_error_handler(|err| {
+        eprintln!("OpenTelemetry error: {:?}", err);
+    }).unwrap_or_else(|e| eprintln!("Failed to set OTel error handler: {:?}", e));
+
     // 2. Setup Tracer Provider & Tracer
     let tracer = if endpoint.contains("4317") {
         let exporter = opentelemetry_otlp::new_exporter()
