@@ -59,8 +59,8 @@ kubectl apply -f k8s/apps/timescaledb.yaml
 # 5.# Apply Applications
 echo "Applying application manifests..."
 kubectl apply -f k8s/apps/tempo.yaml
+kubectl apply -f k8s/apps/metrics-monitors.yaml
 kubectl apply -f k8s/apps/secrets.yaml
-kubectl apply -f k8s/apps/timescaledb.yaml
 kubectl apply -f k8s/apps/vector.yaml
 kubectl apply -f k8s/apps/backend.yaml
 

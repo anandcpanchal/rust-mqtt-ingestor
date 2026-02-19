@@ -58,8 +58,8 @@ kubectl wait --for=condition=ready pod -l app=timescaledb --timeout=120s
 
 # 5. Apply Secrets & Apps
 Write-Host "🚀 Deploying Applications..." -ForegroundColor Cyan
-kubectl apply -f k8s/apps/dashboard.yaml
 kubectl apply -f k8s/apps/metrics-monitors.yaml
+kubectl apply -f k8s/apps/tempo.yaml
 kubectl apply -f k8s/apps/secrets.yaml
 kubectl apply -f k8s/apps/vector.yaml
 kubectl apply -f k8s/apps/backend.yaml
