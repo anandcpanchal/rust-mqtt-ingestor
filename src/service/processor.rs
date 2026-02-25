@@ -30,13 +30,18 @@ impl ServiceProcessor {
             topic = %topic, 
             payload_len = payload.len(),
             device_id = tracing::field::Empty,
-            sequence_id = tracing::field::Empty
+            sequence_id = tracing::field::Empty,
+            payload = tracing::field::Empty
         )
     )]
     pub async fn process_ingest_logic(&self, topic: &str, payload: &[u8]) -> anyhow::Result<Option<Telemetry>> {
         // 1. Parse
         let telemetry: Telemetry = serde_json::from_slice(payload)
-            .map_err(|e| anyhow::anyhow!("Invalid JSON: {:?}", e))?;
+            .map_err(|e| {
+                let raw_payload = String::from_utf8_lossy(payload);
+                tracing::Span::current().record("payload", &raw_payload.as_ref());
+                anyhow::anyhow!("Invalid JSON (payload recorded in trace): {:?}", e)
+            })?;
 
         // Record business IDs in span for searchable pinpointing
         let span = tracing::Span::current();

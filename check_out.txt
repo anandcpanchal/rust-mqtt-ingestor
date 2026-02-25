@@ -1,0 +1,95 @@
+﻿cargo :     Checking poc-mqtt-backend v0.1.0 
+(C:\Users\anand\Documents\rust-mqtt-ingestor)
+At line:1 char:1
++ cargo check 2>&1 | Out-File -Encoding utf8 check_out.txt
++ ~~~~~~~~~~~~~~~~
+    + CategoryInfo          : NotSpecified: (    Checking po...-mqtt-inges 
+   tor):String) [], RemoteException
+    + FullyQualifiedErrorId : NativeCommandError
+ 
+warning: unused imports: `counter` and `gauge`
+ --> src\adapters\timescale.rs:6:15
+  |
+6 | use metrics::{counter, gauge};
+  |               ^^^^^^^  ^^^^^
+  |
+  = note: `#[warn(unused_imports)]` (part of `#[warn(unused)]`) on by 
+default
+
+warning: unused import: `tracing_opentelemetry::OpenTelemetrySpanExt`
+ --> src\adapters\stream_consumer.rs:8:5
+  |
+8 | use tracing_opentelemetry::OpenTelemetrySpanExt;
+  |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused import: `opentelemetry::trace::TraceContextExt`
+ --> src\service\worker_pool.rs:6:5
+  |
+6 | use opentelemetry::trace::TraceContextExt;
+  |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: variable does not need to be mutable
+  --> src\telemetry.rs:23:13
+   |
+23 |         let mut pipeline = opentelemetry_otlp::new_pipeline()
+   |             ----^^^^^^^^
+   |             |
+   |             help: remove this `mut`
+   |
+   = note: `#[warn(unused_mut)]` (part of `#[warn(unused)]`) on by default
+
+warning: variable does not need to be mutable
+  --> src\telemetry.rs:42:13
+   |
+42 |         let mut pipeline = opentelemetry_otlp::new_pipeline()
+   |             ----^^^^^^^^
+   |             |
+   |             help: remove this `mut`
+
+warning: `poc-mqtt-backend` (lib) generated 5 warnings (run `cargo fix 
+--lib -p poc-mqtt-backend` to apply 5 suggestions)
+warning: unused import: `shutdown_telemetry`
+ --> src\main.rs:5:51
+  |
+5 | use poc_mqtt_backend::telemetry::{init_telemetry, shutdown_telemetry};
+  |                                                   ^^^^^^^^^^^^^^^^^^
+  |
+  = note: `#[warn(unused_imports)]` (part of `#[warn(unused)]`) on by 
+default
+
+warning: unused import: `rumqttc::v5::mqttbytes::v5::PublishProperties`
+ --> src\bin\load_tester.rs:4:5
+  |
+4 | use rumqttc::v5::mqttbytes::v5::PublishProperties;
+  |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  |
+  = note: `#[warn(unused_imports)]` (part of `#[warn(unused)]`) on by 
+default
+
+warning: unused imports: `info_span`, `info`, and `instrument::Instrument`
+  --> src\bin\load_tester.rs:10:15
+   |
+10 | use tracing::{info, info_span, instrument::Instrument};
+   |               ^^^^  ^^^^^^^^^  ^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused variable: `payload_json`
+   --> src\bin\load_tester.rs:150:13
+    |
+150 |         let payload_json = serde_json::to_vec(&payload)?;
+    |             ^^^^^^^^^^^^ help: if this is intentional, prefix it 
+with an underscore: `_payload_json`
+    |
+    = note: `#[warn(unused_variables)]` (part of `#[warn(unused)]`) on by 
+default
+
+warning: `poc-mqtt-backend` (bin "load-tester") generated 3 warnings (run 
+`cargo fix --bin "load-tester" -p poc-mqtt-backend` to apply 3 suggestions)
+warning: `poc-mqtt-backend` (bin "poc-mqtt-backend") generated 1 warning 
+(run `cargo fix --bin "poc-mqtt-backend" -p poc-mqtt-backend` to apply 1 
+suggestion)
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 1.42s
+warning: the following packages contain code that will be rejected by a 
+future version of Rust: sqlx-postgres v0.7.4
+note: to see what the problems were, use the option 
+`--future-incompat-report`, or run `cargo report future-incompatibilities 
+--id 4`

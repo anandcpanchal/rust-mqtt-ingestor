@@ -3,7 +3,7 @@ use tokio::sync::mpsc::{Receiver, Sender};
 use tracing::{info, error};
 use crate::service::processor::{ServiceProcessor, IngestMessage};
 use tracing_opentelemetry::OpenTelemetrySpanExt;
-use opentelemetry::trace::TraceContextExt;
+// use opentelemetry::trace::TraceContextExt;
 
 #[derive(Debug)]
 pub struct RawIngestMessage {
@@ -50,7 +50,7 @@ impl WorkerPool {
             tokio::spawn(async move {
                 let _permit = permit; // Hold permit until task completion
 
-                let span = tracing::info_span!("worker_process", topic = %msg.topic);
+                let span = tracing::info_span!("worker_process", topic = %msg.topic, payload = tracing::field::Empty);
                 span.set_parent(parent_cx);
                 let _enter = span.enter();
                 
@@ -77,6 +77,9 @@ impl WorkerPool {
                     },
                     Ok(None) => {}, // Filtered
                     Err(e) => {
+                        let raw_payload = String::from_utf8_lossy(&msg.payload);
+                        span.record("payload", &raw_payload.as_ref());
+                        
                         error!("Processing error in WorkerPool: {:?}. Sending to DLQ.", e);
                         metrics::counter!("worker_errors_total", 1, "type" => "processing_error");
                         

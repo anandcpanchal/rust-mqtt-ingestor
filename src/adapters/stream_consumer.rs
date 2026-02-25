@@ -5,7 +5,6 @@ use tracing::{info, error, warn, instrument, Span};
 use crate::service::worker_pool::RawIngestMessage;
 use tokio::sync::mpsc::Sender;
 use crate::telemetry::KafkaHeaderExtractor;
-use tracing_opentelemetry::OpenTelemetrySpanExt;
 use std::collections::HashMap;
 use opentelemetry::propagation::Extractor;
 
@@ -39,7 +38,7 @@ impl KafkaAdapter {
         }
     }
 
-    #[instrument(skip(self, sender, shutdown_signal), fields(topic = %self.topic, trace_id))]
+    #[instrument(skip(self, sender, shutdown_signal), fields(topic = %self.topic, trace_id, payload = tracing::field::Empty))]
     pub async fn run_loop(
         &self,
         sender: Sender<RawIngestMessage>,
@@ -99,8 +98,13 @@ impl KafkaAdapter {
                                         };
                                         (bridge_msg.topic, bytes)
                                     },
-                                    Err(_) => {
-                                        warn!("Received non-bridge format message. Skipping (need topic for logic).");
+                                    Err(e) => {
+                                        let raw_payload = String::from_utf8_lossy(payload_bytes);
+                                        warn!(error = %e, payload = %raw_payload, "Received non-bridge format message. Skipping (need topic for logic).");
+                                        
+                                        // Record in span for OTel
+                                        let span = Span::current();
+                                        span.record("payload", &raw_payload.as_ref());
                                         continue;
                                     }
                                 };
