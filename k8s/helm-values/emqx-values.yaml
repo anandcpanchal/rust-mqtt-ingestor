@@ -22,5 +22,18 @@ service:
     dashboard: 18083
 
 emqxConfig:
-  EMQX_ALLOW_ANONYMOUS: "true" # For dev convenience
+  EMQX_ALLOW_ANONYMOUS: "false" # Enforce Postgres authentication
   EMQX_LOADED_PLUGINS: "emqx_recon,emqx_retainer,emqx_management,emqx_dashboard"
+
+extraVolumes:
+  - name: emqx-custom-config
+    configMap:
+      name: emqx-config
+
+extraVolumeMounts:
+  - name: emqx-custom-config
+    mountPath: /opt/emqx/etc/emqx.conf
+    subPath: emqx.conf
+  - name: emqx-custom-config
+    mountPath: /opt/emqx/etc/acl.conf
+    subPath: acl.conf
